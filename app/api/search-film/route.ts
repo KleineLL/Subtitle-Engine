@@ -47,19 +47,33 @@ export async function POST(request: Request) {
       );
     }
 
-    if (imdbID) {
-      return NextResponse.json({
-        Title: data.Title,
-        Year: data.Year,
-        imdbID: data.imdbID,
-        Plot: data.Plot,
-        Genre: data.Genre,
-        Director: data.Director,
-        Actors: data.Actors,
-      });
+    let detailData = data;
+
+    if (!imdbID) {
+      if (!data.Search?.length) {
+        return NextResponse.json(
+          { error: "No results found" },
+          { status: 404 }
+        );
+      }
+      const firstImdbId = data.Search[0].imdbID;
+      const detailRes = await fetch(
+        `http://www.omdbapi.com/?apikey=${apiKey}&i=${encodeURIComponent(firstImdbId)}&plot=full`
+      );
+      if (detailRes.ok) {
+        detailData = await detailRes.json();
+      }
     }
 
-    return NextResponse.json(data);
+    return NextResponse.json({
+      Title: detailData.Title,
+      Year: detailData.Year,
+      imdbID: detailData.imdbID,
+      Plot: detailData.Plot,
+      Genre: detailData.Genre,
+      Director: detailData.Director,
+      Actors: detailData.Actors,
+    });
   } catch (error) {
     console.error("Search film error:", error);
     return NextResponse.json(
