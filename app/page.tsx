@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-type FilmResult = {
+type FilmDetail = {
   Title: string;
   Year: string;
   imdbID: string;
@@ -23,32 +23,14 @@ export default function Home() {
   const [filmTitle, setFilmTitle] = useState("");
   const [year, setYear] = useState("");
   const [imdbId, setImdbId] = useState("");
-  const [searchResults, setSearchResults] = useState<FilmResult[] | null>(null);
+  const [searchResults, setSearchResults] = useState<FilmDetail[] | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
-  const [selectedFilm, setSelectedFilm] = useState<FilmResult | null>(null);
+  const [selectedFilm, setSelectedFilm] = useState<FilmDetail | null>(null);
   const [translationStyle, setTranslationStyle] = useState(TRANSLATION_STYLES[0].value);
   const [srtFile, setSrtFile] = useState<File | null>(null);
   const [translatedSubtitles, setTranslatedSubtitles] = useState("");
   const [isTranslating, setIsTranslating] = useState(false);
-
-  const toFilmResult = (item: {
-    Title: string;
-    Year: string;
-    imdbID: string;
-    Plot?: string;
-    Genre?: string;
-    Director?: string;
-    Actors?: string;
-  }): FilmResult => ({
-    Title: item.Title,
-    Year: item.Year,
-    imdbID: item.imdbID,
-    Plot: item.Plot,
-    Genre: item.Genre,
-    Director: item.Director,
-    Actors: item.Actors,
-  });
 
   const handleSearch = async () => {
     if (!filmTitle.trim() && !imdbId.trim()) return;
@@ -75,16 +57,14 @@ export default function Home() {
     }
 
     if (data.imdbID) {
-      setSearchResults([toFilmResult(data)]);
-    } else if (data.Search?.length) {
-      setSearchResults(data.Search.map(toFilmResult));
+      setSearchResults([data]);
     } else {
       setSearchError("No results found");
     }
     setIsSearching(false);
   };
 
-  const handleConfirmFilm = (film: FilmResult) => {
+  const handleConfirmFilm = (film: FilmDetail) => {
     setSelectedFilm(film);
     setPhase("phase2");
   };
