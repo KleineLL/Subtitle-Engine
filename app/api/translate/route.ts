@@ -1,11 +1,27 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { HttpsProxyAgent } from "https-proxy-agent";
+// @ts-expect-error - node-fetch v2 has no default export types
+import nodeFetch from "node-fetch";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+const proxyAgent = process.env.HTTPS_PROXY
+  ? new HttpsProxyAgent(process.env.HTTPS_PROXY)
+  : undefined;
+
+const customFetch: typeof fetch = proxyAgent
+  ? (url, init) =>
+      nodeFetch(url as string, {
+        ...init,
+        agent: proxyAgent,
+      } as Parameters<typeof nodeFetch>[1])
+  : undefined;
+
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
+  ...(customFetch && { fetch: customFetch }),
 });
 
 const CHUNK_SIZE = 15;
