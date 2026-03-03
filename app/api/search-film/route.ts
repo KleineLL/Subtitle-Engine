@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     let url: string;
 
     if (imdbID) {
-      url = `http://www.omdbapi.com/?apikey=${apiKey}&i=${encodeURIComponent(imdbID)}`;
+      url = `http://www.omdbapi.com/?apikey=${apiKey}&i=${encodeURIComponent(imdbID)}&plot=full`;
     } else {
       const searchTitle = title ?? "";
       const searchYear = year ?? "";
@@ -45,6 +45,18 @@ export async function POST(request: Request) {
         { error: data.Error ?? "No results found" },
         { status: 404 }
       );
+    }
+
+    if (imdbID) {
+      return NextResponse.json({
+        Title: data.Title,
+        Year: data.Year,
+        imdbID: data.imdbID,
+        Plot: data.Plot,
+        Genre: data.Genre,
+        Director: data.Director,
+        Actors: data.Actors,
+      });
     }
 
     return NextResponse.json(data);

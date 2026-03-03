@@ -75,17 +75,32 @@ export default function Home() {
     setPhase("phase2");
   };
 
-  const handleTranslate = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleTranslate = async () => {
     if (!srtFile) return;
+
     setIsTranslating(true);
-    // Mock translation - simulate delay then show placeholder
-    setTimeout(() => {
-      setTranslatedSubtitles(
-        `1\n00:00:01,000 --> 00:00:04,000\n[Mock translated subtitle - ${translationStyle}]\n\n2\n00:00:05,000 --> 00:00:08,000\n[Translation style: ${TRANSLATION_STYLES.find((s) => s.value === translationStyle)?.label}]\n`
-      );
+
+    try {
+      const text = await srtFile.text();
+
+      const res = await fetch("/api/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subtitles: text }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Translation failed");
+      }
+
+      const data = await res.json();
+      setTranslatedSubtitles(data.translated);
+    } catch (err) {
+      console.error(err);
+      alert("Translation failed.");
+    } finally {
       setIsTranslating(false);
-    }, 800);
+    }
   };
 
   const handleDownload = () => {
@@ -239,7 +254,13 @@ export default function Home() {
               </p>
             )}
 
-            <form onSubmit={handleTranslate} className="space-y-4">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleTranslate();
+              }}
+              className="space-y-4"
+            >
               <div>
                 <label className="mb-1 block text-xs font-medium text-stone-600">
                   Subtitle file (.srt)
