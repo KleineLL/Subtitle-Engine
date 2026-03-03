@@ -12,10 +12,10 @@ type FilmDetail = {
   Actors?: string;
 };
 
-const TRANSLATION_STYLES = [
-  { value: "cultural", label: "Cultural immersive" },
-  { value: "literal", label: "Literal study mode" },
-  { value: "comedic", label: "Comedic rhythm enhanced" },
+const TRANSLATION_PHILOSOPHIES = [
+  { value: "adaptive", label: "Context-aware adaptive (recommended)" },
+  { value: "fidelity", label: "Strict semantic fidelity" },
+  { value: "expressive", label: "Expressive performance mode" },
 ] as const;
 
 export default function Home() {
@@ -27,7 +27,9 @@ export default function Home() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [selectedFilm, setSelectedFilm] = useState<FilmDetail | null>(null);
-  const [translationStyle, setTranslationStyle] = useState(TRANSLATION_STYLES[0].value);
+  const [translationPhilosophy, setTranslationPhilosophy] = useState<
+    (typeof TRANSLATION_PHILOSOPHIES)[number]["value"]
+  >(TRANSLATION_PHILOSOPHIES[0].value);
   const [srtFile, setSrtFile] = useState<File | null>(null);
   const [translatedSubtitles, setTranslatedSubtitles] = useState("");
   const [isTranslating, setIsTranslating] = useState(false);
@@ -80,7 +82,11 @@ export default function Home() {
       const res = await fetch("/api/translate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subtitles: text, filmContext: selectedFilm }),
+        body: JSON.stringify({
+          subtitles: text,
+          filmContext: selectedFilm,
+          translationPhilosophy,
+        }),
       });
 
       if (!res.ok) {
@@ -268,20 +274,22 @@ export default function Home() {
               </div>
 
               <div>
-                <label htmlFor="style" className="mb-1 block text-xs font-medium text-stone-600">
-                  Translation style
+                <label htmlFor="philosophy" className="mb-1 block text-xs font-medium text-stone-600">
+                  Translation Philosophy (optional advanced)
                 </label>
                 <select
-                  id="style"
-                  value={translationStyle}
+                  id="philosophy"
+                  value={translationPhilosophy}
                   onChange={(e) =>
-                    setTranslationStyle(e.target.value as (typeof TRANSLATION_STYLES)[number]["value"])
+                    setTranslationPhilosophy(
+                      e.target.value as (typeof TRANSLATION_PHILOSOPHIES)[number]["value"]
+                    )
                   }
                   className="w-full rounded border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400 focus:ring-1 focus:ring-stone-300"
                 >
-                  {TRANSLATION_STYLES.map((style) => (
-                    <option key={style.value} value={style.value}>
-                      {style.label}
+                  {TRANSLATION_PHILOSOPHIES.map((philosophy) => (
+                    <option key={philosophy.value} value={philosophy.value}>
+                      {philosophy.label}
                     </option>
                   ))}
                 </select>
