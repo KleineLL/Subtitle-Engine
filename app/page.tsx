@@ -3,10 +3,13 @@
 import { useState } from "react";
 
 type FilmResult = {
-  id: string;
-  title: string;
-  year: string;
-  imdbId: string;
+  Title: string;
+  Year: string;
+  imdbID: string;
+  Plot?: string;
+  Genre?: string;
+  Director?: string;
+  Actors?: string;
 };
 
 const TRANSLATION_STYLES = [
@@ -29,11 +32,22 @@ export default function Home() {
   const [translatedSubtitles, setTranslatedSubtitles] = useState("");
   const [isTranslating, setIsTranslating] = useState(false);
 
-  const toFilmResult = (item: { imdbID: string; Title: string; Year: string }): FilmResult => ({
-    id: item.imdbID,
-    title: item.Title,
-    year: item.Year,
-    imdbId: item.imdbID,
+  const toFilmResult = (item: {
+    Title: string;
+    Year: string;
+    imdbID: string;
+    Plot?: string;
+    Genre?: string;
+    Director?: string;
+    Actors?: string;
+  }): FilmResult => ({
+    Title: item.Title,
+    Year: item.Year,
+    imdbID: item.imdbID,
+    Plot: item.Plot,
+    Genre: item.Genre,
+    Director: item.Director,
+    Actors: item.Actors,
   });
 
   const handleSearch = async () => {
@@ -108,7 +122,7 @@ export default function Home() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `translated_${selectedFilm?.title.replace(/\s+/g, "_") ?? "subtitles"}.srt`;
+    a.download = `translated_${selectedFilm?.Title.replace(/\s+/g, "_") ?? "subtitles"}.srt`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -208,13 +222,13 @@ export default function Home() {
               <ul className="divide-y divide-stone-100">
                 {searchResults.map((film) => (
                   <li
-                    key={film.id}
+                    key={film.imdbID}
                     className="flex items-center justify-between gap-3 py-3"
                   >
                     <div>
-                      <p className="text-sm font-medium">{film.title}</p>
+                      <p className="text-sm font-medium">{film.Title}</p>
                       <p className="text-xs text-stone-500">
-                        {film.year} · {film.imdbId}
+                        {film.Year} · {film.imdbID}
                       </p>
                     </div>
                     <button
@@ -250,7 +264,7 @@ export default function Home() {
 
             {selectedFilm && (
               <p className="mb-6 text-sm text-stone-600">
-                Translating for <strong>{selectedFilm.title}</strong> ({selectedFilm.year})
+                Translating for <strong>{selectedFilm.Title}</strong> ({selectedFilm.Year})
               </p>
             )}
 
