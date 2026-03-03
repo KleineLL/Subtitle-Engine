@@ -293,6 +293,10 @@ export default function Home() {
                     </option>
                   ))}
                 </select>
+                <p className="mt-2 text-sm text-stone-500">
+                  Philosophy shapes translation choices dynamically instead of forcing a uniform
+                  stylistic filter.
+                </p>
               </div>
 
               <button
