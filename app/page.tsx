@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 type FilmDetail = {
   Title: string;
@@ -33,7 +33,6 @@ export default function Home() {
   const [srtFile, setSrtFile] = useState<File | null>(null);
   const [translatedSubtitles, setTranslatedSubtitles] = useState("");
   const [isTranslating, setIsTranslating] = useState(false);
-  const [progress, setProgress] = useState(0);
 
   const handleSearch = async () => {
     if (!filmTitle.trim() && !imdbId.trim()) return;
@@ -75,7 +74,6 @@ export default function Home() {
   const handleTranslate = async () => {
     if (!srtFile) return;
 
-    setProgress(5);
     setIsTranslating(true);
 
     try {
@@ -120,7 +118,6 @@ export default function Home() {
       console.error(err);
       alert(err instanceof Error ? err.message : "Translation failed.");
     } finally {
-      setProgress(100);
       setIsTranslating(false);
     }
   };
@@ -145,21 +142,7 @@ export default function Home() {
     setImdbId("");
     setSrtFile(null);
     setTranslatedSubtitles("");
-    setProgress(0);
   };
-
-  useEffect(() => {
-    if (!isTranslating) return;
-
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 90) return prev;
-        return prev + Math.random() * 5;
-      });
-    }, 700);
-
-    return () => clearInterval(interval);
-  }, [isTranslating]);
 
   return (
     <div className="min-h-screen bg-stone-50 px-4 py-12 font-sans text-stone-900">
@@ -342,20 +325,6 @@ export default function Home() {
               >
                 {isTranslating ? "Translating…" : "Translate"}
               </button>
-
-              {(isTranslating || progress > 0) && (
-                <>
-                  <div className="mt-4 h-3 w-full rounded-full bg-gray-200">
-                    <div
-                      className="bg-blue-500 h-3 rounded-full transition-all duration-300"
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
-                  <p className="mt-2 text-sm text-gray-500">
-                    🎬 Translating {selectedFilm?.Title || filmTitle || "film"} subtitles… {Math.round(progress)}%
-                  </p>
-                </>
-              )}
             </form>
 
             <div className="mt-6">
