@@ -2,6 +2,62 @@
 
 import { useState } from "react";
 
+const CHUNK_SIZE = 80;
+const CONTEXT_LINES = 3;
+
+type SrtEntry = {
+  index: number;
+  timecode: string;
+  text: string;
+};
+
+function parseSrt(srt: string): SrtEntry[] {
+  const entries: SrtEntry[] = [];
+  const blocks = srt.trim().split(/\n\s*\n/).filter(Boolean);
+
+  for (const block of blocks) {
+    const lines = block.split(/\r?\n/);
+    if (lines.length < 2) continue;
+
+    const index = parseInt(lines[0], 10) || entries.length + 1;
+    const timecodeMatch = lines[1].match(
+      /\d{2}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[,.]\d{3}/
+    );
+    const timecode = timecodeMatch ? lines[1].trim() : "";
+    const text = lines.slice(2).join("\n").trim();
+
+    entries.push({ index, timecode, text });
+  }
+
+  return entries;
+}
+
+function formatEntriesForContext(entries: SrtEntry[]): string {
+  return entries.map((e) => `${e.index}\n${e.text}`).join("\n\n");
+}
+
+function formatChunkForTranslation(entries: SrtEntry[]): string {
+  return entries.map((e, i) => `${i + 1}\n${e.text}`).join("\n\n");
+}
+
+function parseTranslatedChunk(raw: string, count: number): string[] {
+  const texts: string[] = [];
+  const blocks = raw.trim().split(/\n\s*\n/).filter(Boolean);
+
+  for (let i = 0; i < Math.min(blocks.length, count); i++) {
+    const lines = blocks[i].split(/\r?\n/);
+    const text =
+      lines.length > 1 ? lines.slice(1).join("\n").trim() : lines[0]?.trim() ?? "";
+    texts.push(text);
+  }
+
+  return texts;
+}
+
+function entryToSrt(entry: SrtEntry, text: string): string {
+  return `${entry.index}\n${entry.timecode}\n${text}\n`;
+}
+
 type FilmDetail = {
   Title: string;
   Year: string;
@@ -33,6 +89,10 @@ export default function Home() {
   const [srtFile, setSrtFile] = useState<File | null>(null);
   const [translatedSubtitles, setTranslatedSubtitles] = useState("");
   const [isTranslating, setIsTranslating] = useState(false);
+  const [translationProgress, setTranslationProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
 
   const handleSearch = async () => {
     if (!filmTitle.trim() && !imdbId.trim()) return;
@@ -74,32 +134,111 @@ export default function Home() {
   const handleTranslate = async () => {
     if (!srtFile) return;
 
+    const apiKey = process.env.NEXT_PUBLIC_OPENROUTER_API_KEY;
+    if (!apiKey) {
+      alert("OpenRouter API key is not configured. Add NEXT_PUBLIC_OPENROUTER_API_KEY to your environment.");
+      return;
+    }
+
     setIsTranslating(true);
+    setTranslationProgress(null);
 
     try {
       const text = await srtFile.text();
+      const entries = parseSrt(text);
 
-      const res = await fetch("/api/translate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          subtitles: text,
-          filmContext: selectedFilm,
-          translationPhilosophy,
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error("Translation failed");
+      if (entries.length === 0) {
+        alert("No valid subtitle entries found.");
+        return;
       }
 
-      const data = await res.json();
-      setTranslatedSubtitles(data.translated);
+      const filmInfo = selectedFilm
+        ? `Film Context
+Title: ${selectedFilm.Title ?? ""}
+Year: ${selectedFilm.Year ?? ""}
+Genre: ${selectedFilm.Genre ?? ""}
+Plot: ${selectedFilm.Plot ?? ""}
+
+`
+        : "";
+
+      const systemPrompt = `You are a professional film subtitle translator.
+
+${filmInfo}Translation Philosophy
+- Preserve character voice
+- Maintain cinematic dialogue flow
+- Adapt slang naturally
+- Avoid literal translation
+
+You may receive previous subtitle lines as context. Use them only for understanding dialogue flow—do not translate them. Translate only the current chunk.
+
+Output rules:
+- Keep the same line numbers and order as the input.
+- Do not merge or split subtitles: one input subtitle must produce exactly one output subtitle.
+- Each block: number on line 1, then translated text, blank lines between blocks.
+- Do not add or modify timecodes.`;
+
+      const translatedTexts: string[] = [];
+      const totalChunks = Math.ceil(entries.length / CHUNK_SIZE);
+
+      for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
+        setTranslationProgress({
+          current: Math.floor(i / CHUNK_SIZE) + 1,
+          total: totalChunks,
+        });
+
+        const chunk = entries.slice(i, i + CHUNK_SIZE);
+        const previousEntries = entries.slice(Math.max(0, i - CONTEXT_LINES), i);
+        const previousContext =
+          previousEntries.length > 0
+            ? `Previous Context (do not translate):\n${formatEntriesForContext(previousEntries)}\n\n`
+            : "";
+        const chunkInput = formatChunkForTranslation(chunk);
+        const userContent = `${previousContext}Translate these subtitles:\n${chunkInput}`;
+
+        const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+            "HTTP-Referer": "https://subtitle-engine.vercel.app",
+            "X-Title": "Subtitle Engine",
+          },
+          body: JSON.stringify({
+            model: "openai/gpt-4o-mini",
+            temperature: 0.7,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userContent },
+            ],
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error?.message ?? "Translation failed");
+        }
+
+        const data = await res.json();
+        const raw = data.choices?.[0]?.message?.content?.trim() ?? "";
+        const parsed = parseTranslatedChunk(raw, chunk.length);
+
+        for (let j = 0; j < chunk.length; j++) {
+          translatedTexts.push(parsed[j] ?? chunk[j].text);
+        }
+      }
+
+      const translated = entries
+        .map((entry, i) => entryToSrt(entry, translatedTexts[i] ?? entry.text))
+        .join("\n");
+
+      setTranslatedSubtitles(translated);
     } catch (err) {
       console.error(err);
-      alert("Translation failed.");
+      alert(err instanceof Error ? err.message : "Translation failed.");
     } finally {
       setIsTranslating(false);
+      setTranslationProgress(null);
     }
   };
 
@@ -123,6 +262,7 @@ export default function Home() {
     setImdbId("");
     setSrtFile(null);
     setTranslatedSubtitles("");
+    setTranslationProgress(null);
   };
 
   return (
@@ -304,8 +444,17 @@ export default function Home() {
                 disabled={!srtFile || isTranslating}
                 className="w-full rounded bg-stone-900 py-2.5 text-sm font-medium text-white transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-400"
               >
-                {isTranslating ? "Translating…" : "Translate"}
+                {isTranslating
+                  ? translationProgress
+                    ? `Translating chunk ${translationProgress.current} of ${translationProgress.total}…`
+                    : "Translating…"
+                  : "Translate"}
               </button>
+              {isTranslating && translationProgress && (
+                <p className="text-center text-sm text-stone-500">
+                  Processing chunk {translationProgress.current} of {translationProgress.total}…
+                </p>
+              )}
             </form>
 
             <div className="mt-6">
