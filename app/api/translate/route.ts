@@ -52,80 +52,67 @@ export async function POST(req: Request) {
     const totalChunks = chunks.length;
     console.log("Total chunks:", chunks.length);
 
-    const systemPromptBase = `You are a professional subtitle translator.
+    const systemPrompt = `You are a professional subtitle translator.
+
+You will receive a JSON array of subtitle entries.
+Translate ONLY the text field into Chinese.
+
+Return a JSON array with the same ids.
 
 Rules:
-- Translate dialogue naturally into Chinese
-- Adapt slang and tone when appropriate
-- Choose translation strategy dynamically (literal / adaptive / expressive)
-- Translate every numbered subtitle line. Do NOT skip any numbers.
-- Return the same numbered format: "N|| translated text" per line
-
-Strict output rules:
-- Return ONLY the Chinese translation text
-- Do NOT include the original English subtitles
-- Do NOT output bilingual subtitles
-- Do NOT repeat the source text
-- Each output line must contain only the number, "||", and the translated Chinese dialogue
-- Preserve every number from 1 to N—translate every line including narration or context
+- do not skip any entries
+- do not include English
+- keep the same ids
+- return only Chinese translations
 
 ${filmContextText}`;
 
-    const parseNumberedOutput = (
+    type JsonEntry = { id: number; text: string };
+
+    const parseJsonOutput = (
       rawResponse: string,
       chunk: (typeof entries)[0][]
-    ): string[] => {
-      const result: string[] = new Array(chunk.length);
-      for (let j = 0; j < chunk.length; j++) {
-        result[j] = chunk[j].text;
-      }
-      const lines = rawResponse.trim().split(/\r?\n/).filter(Boolean);
-      for (const line of lines) {
-        const match = line.match(/^(\d+)\s*\|\|\s*(.*)$/);
-        if (match) {
-          const num = parseInt(match[1], 10);
-          const text = match[2].trim();
-          if (num >= 1 && num <= chunk.length) {
-            result[num - 1] = text;
+    ): JsonEntry[] | null => {
+      const trimmed = rawResponse.trim();
+      const jsonMatch = trimmed.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) return null;
+      try {
+        const parsed = JSON.parse(jsonMatch[0]) as unknown;
+        if (!Array.isArray(parsed)) return null;
+        const result: JsonEntry[] = [];
+        for (const item of parsed) {
+          if (
+            item &&
+            typeof item === "object" &&
+            "id" in item &&
+            "text" in item &&
+            typeof (item as JsonEntry).id === "number" &&
+            typeof (item as JsonEntry).text === "string"
+          ) {
+            result.push({ id: (item as JsonEntry).id, text: (item as JsonEntry).text });
           }
         }
+        return result;
+      } catch {
+        return null;
       }
-      return result;
     };
 
     const translateChunk = async (
       chunk: (typeof entries)[0][],
-      numberedInput: string,
+      jsonInput: string,
       userContent: string
-    ): Promise<string[]> => {
+    ): Promise<JsonEntry[] | null> => {
       const completion = await client.chat.completions.create({
         model: "openai/gpt-4o-mini",
         temperature: 0.3,
         messages: [
-          { role: "system", content: systemPromptBase },
+          { role: "system", content: systemPrompt },
           { role: "user", content: userContent },
         ],
       });
       const rawResponse = (completion.choices[0]?.message?.content ?? "").trim();
-      return parseNumberedOutput(rawResponse, chunk);
-    };
-
-    const normalizeToChunkLength = (
-      translatedLines: string[],
-      chunk: (typeof entries)[0][]
-    ): string[] => {
-      const expectedLen = chunk.length;
-      if (translatedLines.length === expectedLen) return translatedLines;
-      if (translatedLines.length > expectedLen) {
-        const head = translatedLines.slice(0, expectedLen - 1);
-        const tail = translatedLines.slice(expectedLen - 1).join(" ");
-        return [...head, tail];
-      }
-      const result = [...translatedLines];
-      while (result.length < expectedLen) {
-        result.push(chunk[result.length].text);
-      }
-      return result.slice(0, expectedLen);
+      return parseJsonOutput(rawResponse, chunk);
     };
 
     await Promise.all(
@@ -136,56 +123,54 @@ ${filmContextText}`;
           chunkStartIndex
         );
         const contextText = contextEntries.map((e) => e.text).join("\n");
-        const numberedInput = chunk
-          .map((e, idx) => `${idx + 1}|| ${e.text}`)
-          .join("\n");
+
+        const jsonInput = JSON.stringify(
+          chunk.map((e, idx) => ({ id: idx, text: e.text })),
+          null,
+          2
+        );
 
         const userContent = contextText
           ? `Context from previous dialogue:
 ${contextText}
 
-Subtitles to translate (numbered format—translate every line, do NOT skip any numbers):
-${numberedInput}
-
-Translate every numbered subtitle line into Chinese. Do NOT skip any numbers. Return the same numbered format.
+Subtitles to translate (JSON array):
+${jsonInput}
 
 Example output:
-1|| 因为我得付房租。
-2|| 但要我说的话，敌基督早就和我们在一起了……
-3|| 而且他是来真的，大生意。
-4|| - 好吧，宁？ - 嗯。`
-          : `Subtitles to translate (numbered format—translate every line, do NOT skip any numbers):
-${numberedInput}
-
-Translate every numbered subtitle line into Chinese. Do NOT skip any numbers. Return the same numbered format.
+[
+  { "id": 0, "text": "因为我得付房租。" },
+  { "id": 1, "text": "但要我说的话……" },
+  { "id": 2, "text": "而且他是来真的，大生意。" }
+]`
+          : `Subtitles to translate (JSON array):
+${jsonInput}
 
 Example output:
-1|| 因为我得付房租。
-2|| 但要我说的话，敌基督早就和我们在一起了……
-3|| 而且他是来真的，大生意。
-4|| - 好吧，宁？ - 嗯。`;
+[
+  { "id": 0, "text": "因为我得付房租。" },
+  { "id": 1, "text": "但要我说的话……" },
+  { "id": 2, "text": "而且他是来真的，大生意。" }
+]`;
 
         console.log(`Translating chunk ${i + 1}/${totalChunks}`);
 
-        let translatedLines = await translateChunk(chunk, numberedInput, userContent);
+        let result = await translateChunk(chunk, jsonInput, userContent);
 
-        if (translatedLines.length !== chunk.length) {
-          console.warn(
-            "Translation line mismatch. Retrying...",
-            `expected ${chunk.length}, got ${translatedLines.length}`
-          );
-          translatedLines = await translateChunk(chunk, numberedInput, userContent);
+        if (!result) {
+          console.warn("JSON parse failed. Retrying translation...");
+          result = await translateChunk(chunk, jsonInput, userContent);
         }
 
-        if (translatedLines.length !== chunk.length) {
-          translatedLines = normalizeToChunkLength(translatedLines, chunk);
-        }
-
-        for (let j = 0; j < chunk.length; j++) {
-          const cleaned = (translatedLines[j] ?? chunk[j].text ?? "")
-            .replace(/\n/g, " ")
-            .trim();
-          chunk[j].text = cleaned;
+        if (result) {
+          result.forEach((item) => {
+            const targetIndex = chunkStartIndex + item.id;
+            if (targetIndex >= 0 && targetIndex < entries.length) {
+              entries[targetIndex].text = item.text.replace(/\s+/g, " ").trim();
+            }
+          });
+        } else {
+          console.error(`Chunk ${i + 1}: JSON parsing failed after retry. Skipping chunk.`);
         }
       })
     );
