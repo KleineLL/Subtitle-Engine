@@ -118,7 +118,7 @@ Rules:
       userContent: string
     ): Promise<JsonEntry[] | null> => {
       const completion = await openrouter.chat.completions.create({
-        model: "openai/gpt-4o",
+        model: "openai/gpt-4o-mini",
         temperature: 0.3,
         messages: [
           { role: "system", content: systemPrompt },
