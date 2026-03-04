@@ -16,20 +16,6 @@ const client = new OpenAI({
   },
 });
 
-function normalizeSubtitleText(text: string): string {
-  // replace line breaks with spaces
-  text = text.replace(/\n/g, " ");
-  // convert full-width spaces to normal spaces
-  text = text.replace(/\u3000/g, " ");
-  // remove spaces between Chinese characters
-  text = text.replace(/([\u4e00-\u9fff])\s+([\u4e00-\u9fff])/g, "$1$2");
-  // collapse multiple spaces into one
-  text = text.replace(/\s+/g, " ");
-  // trim
-  text = text.trim();
-  return text;
-}
-
 export async function POST(req: Request) {
   try {
     console.log("API /api/translate called");
@@ -85,11 +71,10 @@ ${filmContextText}`;
           chunkStartIndex
         );
         const contextText = contextEntries.map((e) => e.text).join("\n");
+        const textLines = chunk.map((e) => e.text);
+        const chunkText = JSON.stringify(textLines, null, 2);
 
         console.log(`Translating chunk ${i + 1}/${totalChunks}`);
-
-        const textLines = chunk.map((e) => e.text);
-        const textLinesJson = JSON.stringify(textLines, null, 2);
 
         const completion = await client.chat.completions.create({
           model: "openai/gpt-4o-mini",
@@ -98,13 +83,24 @@ ${filmContextText}`;
             { role: "system", content: systemPromptBase },
             {
               role: "user",
-              content: `Translate the following subtitle lines into Chinese. Return ONLY a JSON array of translated strings, one per line, in the same order.
+              content: contextText
+                ? `Context from previous dialogue:
+${contextText}
+
+Subtitles to translate:
+${chunkText}
+
+Translate the subtitle lines into Chinese. Return ONLY a JSON array of translated strings, one per line, in the same order.
+
+Example format:
+["translation of first line", "translation of second line"]`
+                : `Translate the following subtitle lines into Chinese. Return ONLY a JSON array of translated strings, one per line, in the same order.
 
 Example format:
 ["translation of first line", "translation of second line"]
 
-${contextText ? `Context from previous dialogue:\n${contextText}\n\n` : ""}Subtitles to translate:
-${textLinesJson}`,
+Subtitles to translate:
+${chunkText}`,
             },
           ],
         });
@@ -120,8 +116,10 @@ ${textLinesJson}`,
         }
 
         for (let j = 0; j < chunk.length; j++) {
-          const raw = translatedLines[j] ?? chunk[j].text ?? "";
-          chunk[j].text = normalizeSubtitleText(raw);
+          const cleaned = (translatedLines[j] ?? chunk[j].text ?? "")
+            .replace(/\n/g, " ")
+            .trim();
+          chunk[j].text = cleaned;
         }
       })
     );
