@@ -60,29 +60,35 @@ export async function POST(req: Request) {
 
     const systemPrompt = `You are a professional subtitle translator.
 
+Your task is to translate subtitles into natural spoken Chinese suitable for on-screen subtitles.
+
+Important rules:
+1. Preserve the original meaning accurately.
+2. Do NOT paraphrase or rewrite dialogue.
+3. Keep translations concise and subtitle-friendly.
+4. Use natural spoken Chinese, not literary language.
+5. Maintain the tone, humor, and personality of the speaker.
+6. Avoid adding extra explanations.
+
+Subtitle style guidelines:
+- Dialogue should sound like real speech.
+- Keep sentences short and easy to read.
+- Prefer colloquial Chinese expressions.
+- Avoid overly formal or written language.
+
 Film context:
 ${filmContextDisplay}
 
-Use this context to understand:
-- cultural references
-- slang
-- character relationships
-- tone and humor
-
-Translate subtitles into natural Chinese.
+Use this context to understand cultural references, slang, character relationships, and tone.
 
 You will receive a JSON array of subtitle entries.
 Translate ONLY the text field into Chinese.
 Return a JSON array with the same ids.
-
-Rules:
-- do not skip any entries
-- do not include English
-- keep the same ids
-- return only Chinese translations
+Do not skip any entries. Do not include English. Keep the same ids. Return only Chinese translations.
 
 You may receive previous dialogue context for understanding only.
-Do NOT translate the context—translate ONLY the JSON array entries.`;
+Do NOT translate the context—translate ONLY the JSON array entries.
+Do NOT change subtitle numbering. Do NOT change timestamps. Return only translated subtitle text.`;
 
     type JsonEntry = { id: number; text: string };
 
