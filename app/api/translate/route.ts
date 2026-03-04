@@ -7,6 +7,13 @@ const CHUNK_SIZE = 40;
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+function cleanChineseSpacing(text: string): string {
+  return text
+    .replace(/\s+/g, " ")
+    .replace(/([，。！？；：、""\u201C\u201D])\s+/g, "$1")
+    .trim();
+}
+
 const client = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -166,7 +173,7 @@ Example output:
           result.forEach((item) => {
             const targetIndex = chunkStartIndex + item.id;
             if (targetIndex >= 0 && targetIndex < entries.length) {
-              entries[targetIndex].text = item.text.replace(/\s+/g, " ").trim();
+              entries[targetIndex].text = cleanChineseSpacing(item.text);
             }
           });
         } else {
