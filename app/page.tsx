@@ -158,7 +158,6 @@ export default function Home() {
     setImdbId("");
     setSrtFile(null);
     setTranslatedSubtitles("");
-    setProgress(0);
   };
 
   return (
@@ -343,20 +342,16 @@ export default function Home() {
                 {isTranslating ? "Translating…" : "Translate"}
               </button>
 
-              {(isTranslating || progress > 0) && (
-                <div className="mt-4">
-                  <div className="h-3 w-full overflow-hidden rounded-full bg-gray-200">
-                    <div
-                      className="h-3 rounded-full bg-blue-500 transition-all duration-300"
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
-                  <p className="mt-2 text-sm text-gray-500">
-                    Translating {selectedFilm?.Title || filmTitle || "film"}{" "}
-                    subtitles… {Math.round(progress)}%
-                  </p>
-                </div>
-              )}
+              <div className="mt-4 h-3 w-full rounded-full bg-gray-200">
+                <div
+                  className="h-3 rounded-full bg-blue-500 transition-all duration-300"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <p className="mt-2 text-sm text-gray-500">
+                🎬 Translating {filmTitle || "film"} subtitles…{" "}
+                {Math.round(progress)}%
+              </p>
             </form>
 
             <div className="mt-6">
