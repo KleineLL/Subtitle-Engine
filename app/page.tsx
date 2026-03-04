@@ -35,19 +35,6 @@ export default function Home() {
   const [isTranslating, setIsTranslating] = useState(false);
   const [progress, setProgress] = useState(0);
 
-  useEffect(() => {
-    if (!isTranslating) return;
-
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 90) return prev;
-        return prev + Math.random() * 10;
-      });
-    }, 800);
-
-    return () => clearInterval(interval);
-  }, [isTranslating]);
-
   const handleSearch = async () => {
     if (!filmTitle.trim() && !imdbId.trim()) return;
     setSearchError(null);
@@ -84,6 +71,19 @@ export default function Home() {
     setSelectedFilm(film);
     setPhase("phase2");
   };
+
+  useEffect(() => {
+    if (!isTranslating) return;
+
+    const interval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 90) return prev;
+        return prev + Math.random() * 5;
+      });
+    }, 700);
+
+    return () => clearInterval(interval);
+  }, [isTranslating]);
 
   const handleTranslate = async () => {
     if (!srtFile) return;
@@ -122,69 +122,19 @@ export default function Home() {
         }),
       });
 
+      const data = await res.json();
+
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "Translation failed");
       }
 
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      if (!reader) throw new Error("No response body");
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const msg = JSON.parse(line) as {
-              progress?: number;
-              status?: string;
-              translated?: string;
-              error?: string;
-            };
-            if (msg.status === "done" && msg.translated != null) {
-              setTranslatedSubtitles(msg.translated);
-            }
-            if (msg.status === "error" && msg.error) {
-              throw new Error(msg.error);
-            }
-          } catch (e) {
-            if (e instanceof SyntaxError) continue;
-            throw e;
-          }
-        }
-      }
-
-      if (buffer.trim()) {
-        try {
-          const msg = JSON.parse(buffer) as {
-            progress?: number;
-            status?: string;
-            translated?: string;
-            error?: string;
-          };
-          if (msg.status === "done" && msg.translated != null) {
-            setTranslatedSubtitles(msg.translated);
-          }
-          if (msg.status === "error" && msg.error) {
-            throw new Error(msg.error);
-          }
-        } catch (e) {
-          if (!(e instanceof SyntaxError)) throw e;
-        }
-      }
+      setTranslatedSubtitles(data.translated ?? "");
     } catch (err) {
       console.error(err);
       alert(err instanceof Error ? err.message : "Translation failed.");
     } finally {
-      setProgress(100);
       setIsTranslating(false);
+      setProgress(100);
     }
   };
 
@@ -393,17 +343,18 @@ export default function Home() {
                 {isTranslating ? "Translating…" : "Translate"}
               </button>
 
-              {isTranslating && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm text-stone-600">
-                    <span>{Math.min(100, Math.round(progress))}% Translating subtitles…</span>
-                  </div>
-                  <div className="progress-container h-2 overflow-hidden rounded-full bg-stone-200">
+              {(isTranslating || progress > 0) && (
+                <div className="mt-4">
+                  <div className="h-3 w-full overflow-hidden rounded-full bg-gray-200">
                     <div
-                      className="progress-fill h-full bg-stone-700 transition-[width] duration-300 ease-out"
-                      style={{ width: `${Math.min(100, progress)}%` }}
+                      className="h-3 rounded-full bg-blue-500 transition-all duration-300"
+                      style={{ width: `${progress}%` }}
                     />
                   </div>
+                  <p className="mt-2 text-sm text-gray-500">
+                    Translating {selectedFilm?.Title || filmTitle || "film"}{" "}
+                    subtitles… {Math.round(progress)}%
+                  </p>
                 </div>
               )}
             </form>
