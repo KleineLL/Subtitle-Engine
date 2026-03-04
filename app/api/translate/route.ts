@@ -21,8 +21,12 @@ export async function POST(req: Request) {
     console.log("API /api/translate called");
 
     const body = await req.json();
-    const { subtitles } = body;
+    const { subtitles, filmContext } = body;
     console.log("Request received");
+
+    const filmContextText = filmContext
+      ? `Film context:\n${filmContext.Title ?? ""} (${filmContext.Year ?? ""})\n${filmContext.Genre ?? ""}${filmContext.Plot ? `\n${filmContext.Plot}` : ""}`
+      : "(No film context provided)";
 
     if (!subtitles) {
       return NextResponse.json(
@@ -48,31 +52,60 @@ export async function POST(req: Request) {
     const totalChunks = chunks.length;
     console.log("Total chunks:", chunks.length);
 
-    const translatedChunks = await Promise.all(
-      chunks.map(async (chunk, i) => {
-        console.log(`Translating chunk ${i + 1}/${chunks.length}`);
+    let storyMemory = "";
+    const translatedChunks: string[] = [];
 
-        const chunkText = entriesToSrt(chunk);
+    const systemPromptBase = `You are a professional subtitle translator.
 
-        const completion = await client.chat.completions.create({
-          model: "openai/gpt-4o-mini",
-          temperature: 0.3,
-          messages: [
-            {
-              role: "system",
-              content:
-                "You are a professional subtitle translator. Keep numbering and timestamps unchanged. Only translate dialogue. Return valid SRT.",
-            },
-            {
-              role: "user",
-              content: `Translate the following subtitles into Chinese:\n\n${chunkText}`,
-            },
-          ],
-        });
+Rules:
+- Keep numbering unchanged
+- Keep timestamps unchanged
+- Translate dialogue naturally
+- Adapt slang and tone when appropriate
+- Choose translation strategy dynamically (literal / adaptive / expressive)
 
-        return (completion.choices[0]?.message?.content ?? "").trim();
-      })
-    );
+${filmContextText}
+
+Story so far:
+`;
+
+    for (let i = 0; i < chunks.length; i++) {
+      console.log(`Translating chunk ${i + 1}/${totalChunks}`);
+
+      const chunkText = entriesToSrt(chunks[i]);
+      const systemPrompt = `${systemPromptBase}${storyMemory || "(This is the first chunk.)"}`;
+
+      const completion = await client.chat.completions.create({
+        model: "openai/gpt-4o-mini",
+        temperature: 0.3,
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: `Translate the following subtitles into Chinese and return valid SRT:
+
+${chunkText}`,
+          },
+        ],
+      });
+
+      const translatedChunk = (completion.choices[0]?.message?.content ?? "").trim();
+      translatedChunks.push(translatedChunk);
+
+      const summaryCompletion = await client.chat.completions.create({
+        model: "openai/gpt-4o-mini",
+        temperature: 0.2,
+        messages: [
+          {
+            role: "user",
+            content: `Summarize the dialogue in 1–2 sentences so future chunks understand the story context:\n\n${translatedChunk}`,
+          },
+        ],
+      });
+
+      const summary = (summaryCompletion.choices[0]?.message?.content ?? "").trim();
+      storyMemory = summary ? `${storyMemory ? storyMemory + "\n\n" : ""}${summary}` : storyMemory;
+    }
 
     console.log("All chunks translated");
 
