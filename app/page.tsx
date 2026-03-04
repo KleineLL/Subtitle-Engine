@@ -72,24 +72,11 @@ export default function Home() {
     setPhase("phase2");
   };
 
-  useEffect(() => {
-    if (!isTranslating) return;
-
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 90) return prev;
-        return prev + Math.random() * 5;
-      });
-    }, 700);
-
-    return () => clearInterval(interval);
-  }, [isTranslating]);
-
   const handleTranslate = async () => {
     if (!srtFile) return;
 
-    setIsTranslating(true);
     setProgress(5);
+    setIsTranslating(true);
 
     try {
       const text = await srtFile.text();
@@ -133,8 +120,8 @@ export default function Home() {
       console.error(err);
       alert(err instanceof Error ? err.message : "Translation failed.");
     } finally {
-      setIsTranslating(false);
       setProgress(100);
+      setIsTranslating(false);
     }
   };
 
@@ -158,7 +145,21 @@ export default function Home() {
     setImdbId("");
     setSrtFile(null);
     setTranslatedSubtitles("");
+    setProgress(0);
   };
+
+  useEffect(() => {
+    if (!isTranslating) return;
+
+    const interval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 90) return prev;
+        return prev + Math.random() * 5;
+      });
+    }, 700);
+
+    return () => clearInterval(interval);
+  }, [isTranslating]);
 
   return (
     <div className="min-h-screen bg-stone-50 px-4 py-12 font-sans text-stone-900">
@@ -342,16 +343,19 @@ export default function Home() {
                 {isTranslating ? "Translating…" : "Translate"}
               </button>
 
-              <div className="mt-4 h-3 w-full rounded-full bg-gray-200">
-                <div
-                  className="h-3 rounded-full bg-blue-500 transition-all duration-300"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-              <p className="mt-2 text-sm text-gray-500">
-                🎬 Translating {filmTitle || "film"} subtitles…{" "}
-                {Math.round(progress)}%
-              </p>
+              {(isTranslating || progress > 0) && (
+                <>
+                  <div className="mt-4 h-3 w-full rounded-full bg-gray-200">
+                    <div
+                      className="bg-blue-500 h-3 rounded-full transition-all duration-300"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                  <p className="mt-2 text-sm text-gray-500">
+                    🎬 Translating {selectedFilm?.Title || filmTitle || "film"} subtitles… {Math.round(progress)}%
+                  </p>
+                </>
+              )}
             </form>
 
             <div className="mt-6">
