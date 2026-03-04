@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
 import { parseSrt, entriesToSrt } from "@/lib/srt";
+import { openrouter } from "@/lib/openrouter";
 
 const CHUNK_SIZE = 40;
 
@@ -13,15 +13,6 @@ function cleanChineseSpacing(text: string): string {
     .replace(/([，。！？；：、""\u201C\u201D])\s+/g, "$1")
     .trim();
 }
-
-const client = new OpenAI({
-  baseURL: "https://openrouter.ai/api/v1",
-  apiKey: process.env.OPENROUTER_API_KEY,
-  defaultHeaders: {
-    "HTTP-Referer": "https://subtitle-engine.vercel.app",
-    "X-Title": "Subtitle Engine",
-  },
-});
 
 export async function POST(req: Request) {
   try {
@@ -110,7 +101,7 @@ ${filmContextText}`;
       jsonInput: string,
       userContent: string
     ): Promise<JsonEntry[] | null> => {
-      const completion = await client.chat.completions.create({
+      const completion = await openrouter.chat.completions.create({
         model: "openai/gpt-4o-mini",
         temperature: 0.3,
         messages: [
