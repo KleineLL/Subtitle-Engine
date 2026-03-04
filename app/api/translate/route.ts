@@ -58,21 +58,44 @@ Rules:
 - Translate dialogue naturally into Chinese
 - Adapt slang and tone when appropriate
 - Choose translation strategy dynamically (literal / adaptive / expressive)
-- Return translations as a JSON array where each item corresponds to one subtitle line
-- Do not add numbering, timestamps, or any SRT structure—only the translated text strings
+- Translate every numbered subtitle line. Do NOT skip any numbers.
+- Return the same numbered format: "N|| translated text" per line
 
 Strict output rules:
 - Return ONLY the Chinese translation text
 - Do NOT include the original English subtitles
 - Do NOT output bilingual subtitles
 - Do NOT repeat the source text
-- Each output line must contain only the translated Chinese dialogue
+- Each output line must contain only the number, "||", and the translated Chinese dialogue
+- Preserve every number from 1 to N—translate every line including narration or context
 
 ${filmContextText}`;
 
+    const parseNumberedOutput = (
+      rawResponse: string,
+      chunk: (typeof entries)[0][]
+    ): string[] => {
+      const result: string[] = new Array(chunk.length);
+      for (let j = 0; j < chunk.length; j++) {
+        result[j] = chunk[j].text;
+      }
+      const lines = rawResponse.trim().split(/\r?\n/).filter(Boolean);
+      for (const line of lines) {
+        const match = line.match(/^(\d+)\s*\|\|\s*(.*)$/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          const text = match[2].trim();
+          if (num >= 1 && num <= chunk.length) {
+            result[num - 1] = text;
+          }
+        }
+      }
+      return result;
+    };
+
     const translateChunk = async (
       chunk: (typeof entries)[0][],
-      textLines: string[],
+      numberedInput: string,
       userContent: string
     ): Promise<string[]> => {
       const completion = await client.chat.completions.create({
@@ -84,13 +107,7 @@ ${filmContextText}`;
         ],
       });
       const rawResponse = (completion.choices[0]?.message?.content ?? "").trim();
-      const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
-      const jsonStr = jsonMatch ? jsonMatch[0] : rawResponse;
-      try {
-        return JSON.parse(jsonStr) as string[];
-      } catch {
-        return textLines.map((t) => t);
-      }
+      return parseNumberedOutput(rawResponse, chunk);
     };
 
     const normalizeToChunkLength = (
@@ -119,38 +136,45 @@ ${filmContextText}`;
           chunkStartIndex
         );
         const contextText = contextEntries.map((e) => e.text).join("\n");
-        const textLines = chunk.map((e) => e.text);
-        const chunkText = JSON.stringify(textLines, null, 2);
+        const numberedInput = chunk
+          .map((e, idx) => `${idx + 1}|| ${e.text}`)
+          .join("\n");
 
         const userContent = contextText
           ? `Context from previous dialogue:
 ${contextText}
 
-Subtitles to translate:
-${chunkText}
+Subtitles to translate (numbered format—translate every line, do NOT skip any numbers):
+${numberedInput}
 
-Translate the subtitle lines into Chinese. Return ONLY a JSON array of translated strings, one per line, in the same order.
+Translate every numbered subtitle line into Chinese. Do NOT skip any numbers. Return the same numbered format.
 
-Example format:
-["translation of first line", "translation of second line"]`
-          : `Translate the following subtitle lines into Chinese. Return ONLY a JSON array of translated strings, one per line, in the same order.
+Example output:
+1|| 因为我得付房租。
+2|| 但要我说的话，敌基督早就和我们在一起了……
+3|| 而且他是来真的，大生意。
+4|| - 好吧，宁？ - 嗯。`
+          : `Subtitles to translate (numbered format—translate every line, do NOT skip any numbers):
+${numberedInput}
 
-Example format:
-["translation of first line", "translation of second line"]
+Translate every numbered subtitle line into Chinese. Do NOT skip any numbers. Return the same numbered format.
 
-Subtitles to translate:
-${chunkText}`;
+Example output:
+1|| 因为我得付房租。
+2|| 但要我说的话，敌基督早就和我们在一起了……
+3|| 而且他是来真的，大生意。
+4|| - 好吧，宁？ - 嗯。`;
 
         console.log(`Translating chunk ${i + 1}/${totalChunks}`);
 
-        let translatedLines = await translateChunk(chunk, textLines, userContent);
+        let translatedLines = await translateChunk(chunk, numberedInput, userContent);
 
         if (translatedLines.length !== chunk.length) {
           console.warn(
             "Translation line mismatch. Retrying...",
             `expected ${chunk.length}, got ${translatedLines.length}`
           );
-          translatedLines = await translateChunk(chunk, textLines, userContent);
+          translatedLines = await translateChunk(chunk, numberedInput, userContent);
         }
 
         if (translatedLines.length !== chunk.length) {
