@@ -75,8 +75,7 @@ Strict output rules:
 ${filmContextText}`;
 
     const translateChunk = async (
-      chunk: (typeof entries)[0][],
-      textLines: string[],
+      lines: string[],
       chunkText: string,
       contextText: string
     ): Promise<string[]> => {
@@ -114,7 +113,7 @@ ${chunkText}`;
       try {
         return JSON.parse(jsonStr) as string[];
       } catch {
-        return textLines.map((t) => t);
+        return [...lines];
       }
     };
 
@@ -140,52 +139,43 @@ ${chunkText}`;
     await Promise.all(
       chunks.map(async (chunk, i) => {
         const { startIndex, items } = chunk;
+        const lines = items.map((e) => e.text);
+        const chunkText = JSON.stringify(lines, null, 2);
+
         const contextEntries = entries.slice(
           Math.max(0, startIndex - 10),
           startIndex
         );
         const contextText = contextEntries.map((e) => e.text).join("\n");
-        const textLines = items.map((e) => e.text);
-        const chunkText = JSON.stringify(textLines, null, 2);
 
         console.log(`Translating chunk ${i + 1}/${totalChunks}`);
 
-        let translatedLines = await translateChunk(
-          items,
-          textLines,
-          chunkText,
-          contextText
-        );
+        let translations = await translateChunk(lines, chunkText, contextText);
 
-        if (translatedLines.length !== items.length) {
+        if (translations.length !== items.length) {
           console.warn(
-            `Translation line mismatch (chunk ${i + 1}): got ${translatedLines.length}, expected ${items.length}. Retrying...`
+            `Translation line mismatch (chunk ${i + 1}): got ${translations.length}, expected ${items.length}. Retrying...`
           );
-          translatedLines = await translateChunk(
-            items,
-            textLines,
-            chunkText,
-            contextText
-          );
+          translations = await translateChunk(lines, chunkText, contextText);
         }
 
-        if (translatedLines.length !== items.length) {
+        if (translations.length !== items.length) {
           console.warn(
             `Translation line mismatch persists. Using fallback (chunk ${i + 1}).`
           );
-          translatedLines = normalizeToLength(
-            translatedLines,
+          translations = normalizeToLength(
+            translations,
             items.length,
-            textLines
+            lines
           );
         }
 
-        for (let j = 0; j < items.length; j++) {
-          const cleaned = (translatedLines[j] ?? items[j].text ?? "")
+        translations.forEach((t, idx) => {
+          const cleaned = (t ?? items[idx]?.text ?? "")
             .replace(/\n/g, " ")
             .trim();
-          entries[startIndex + j].text = cleaned;
-        }
+          entries[startIndex + idx].text = cleaned;
+        });
       })
     );
 
