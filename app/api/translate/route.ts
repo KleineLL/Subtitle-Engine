@@ -58,7 +58,10 @@ Rules:
 - Translate dialogue naturally into Chinese
 - Adapt slang and tone when appropriate
 - Choose translation strategy dynamically (literal / adaptive / expressive)
-- Return translations as a JSON array where each item corresponds to one subtitle line
+- You must return a JSON array with EXACTLY the same number of items as the input subtitles
+- Each item must correspond to the same numbered subtitle (strict 1-to-1 mapping)
+- Do not merge multiple subtitles into one translation
+- Do not skip or combine subtitle entries
 - Do not add numbering, timestamps, or any SRT structure—only the translated text strings
 
 Strict output rules:
@@ -73,27 +76,26 @@ ${filmContextText}`;
     const translateChunk = async (
       chunk: (typeof entries)[0][],
       textLines: string[],
-      chunkText: string,
+      numberedInput: string,
       contextText: string
     ): Promise<string[]> => {
+      const outputInstruction = `You must return a JSON array with EXACTLY the same number of items as the input subtitles. Each item must correspond to the same numbered subtitle.
+
+Example output:
+["你好哥们", "- 你还好吗宁？ - 嗯。", "去他妈的"]`;
+
       const userContent = contextText
         ? `Context from previous dialogue:
 ${contextText}
 
-Subtitles to translate:
-${chunkText}
+Subtitles to translate (numbered):
+${numberedInput}
 
-Translate the subtitle lines into Chinese. Return ONLY a JSON array of translated strings, one per line, in the same order.
+Translate each numbered subtitle into Chinese. ${outputInstruction}`
+        : `Subtitles to translate (numbered):
+${numberedInput}
 
-Example format:
-["translation of first line", "translation of second line"]`
-        : `Translate the following subtitle lines into Chinese. Return ONLY a JSON array of translated strings, one per line, in the same order.
-
-Example format:
-["translation of first line", "translation of second line"]
-
-Subtitles to translate:
-${chunkText}`;
+Translate each numbered subtitle into Chinese. ${outputInstruction}`;
 
       const completion = await client.chat.completions.create({
         model: "openai/gpt-4o-mini",
@@ -121,10 +123,7 @@ ${chunkText}`;
     ): string[] => {
       if (lines.length === targetLength) return lines;
       if (lines.length > targetLength) {
-        const result = lines.slice(0, targetLength - 1);
-        const joined = lines.slice(targetLength - 1).join(" ");
-        result.push(joined);
-        return result;
+        return lines.slice(0, targetLength);
       }
       const result = [...lines];
       while (result.length < targetLength) {
@@ -142,14 +141,16 @@ ${chunkText}`;
         );
         const contextText = contextEntries.map((e) => e.text).join("\n");
         const textLines = chunk.map((e) => e.text);
-        const chunkText = JSON.stringify(textLines, null, 2);
+        const numberedInput = textLines
+          .map((t, idx) => `${idx + 1}. ${t}`)
+          .join("\n");
 
         console.log(`Translating chunk ${i + 1}/${totalChunks}`);
 
         let translatedLines = await translateChunk(
           chunk,
           textLines,
-          chunkText,
+          numberedInput,
           contextText
         );
 
@@ -160,7 +161,7 @@ ${chunkText}`;
           translatedLines = await translateChunk(
             chunk,
             textLines,
-            chunkText,
+            numberedInput,
             contextText
           );
         }
