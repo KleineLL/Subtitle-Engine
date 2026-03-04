@@ -79,7 +79,10 @@ Rules:
 - do not skip any entries
 - do not include English
 - keep the same ids
-- return only Chinese translations`;
+- return only Chinese translations
+
+You may receive previous dialogue context for understanding only.
+Do NOT translate the context—translate ONLY the JSON array entries.`;
 
     type JsonEntry = { id: number; text: string };
 
@@ -136,7 +139,9 @@ Rules:
           Math.max(0, chunkStartIndex - CONTEXT_WINDOW),
           chunkStartIndex
         );
-        const contextText = contextEntries.map((e) => e.text).join("\n");
+        const contextText = contextEntries
+          .map((e) => e.text)
+          .join("\n");
 
         const jsonInput = JSON.stringify(
           chunk.map((e, idx) => ({ id: idx, text: e.text })),
@@ -145,7 +150,7 @@ Rules:
         );
 
         const userContent = contextText
-          ? `Previous dialogue context (for understanding only—do NOT translate this):
+          ? `Previous dialogue context (for understanding only—do not translate):
 ${contextText}
 
 Translate the following subtitles (JSON array):
