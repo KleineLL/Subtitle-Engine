@@ -16,6 +16,20 @@ const client = new OpenAI({
   },
 });
 
+function normalizeSubtitleText(text: string): string {
+  // replace line breaks with spaces
+  text = text.replace(/\n/g, " ");
+  // convert full-width spaces to normal spaces
+  text = text.replace(/\u3000/g, " ");
+  // remove spaces between Chinese characters
+  text = text.replace(/([\u4e00-\u9fff])\s+([\u4e00-\u9fff])/g, "$1$2");
+  // collapse multiple spaces into one
+  text = text.replace(/\s+/g, " ");
+  // trim
+  text = text.trim();
+  return text;
+}
+
 export async function POST(req: Request) {
   try {
     console.log("API /api/translate called");
@@ -106,11 +120,8 @@ ${textLinesJson}`,
         }
 
         for (let j = 0; j < chunk.length; j++) {
-          const cleaned = (translatedLines[j] ?? chunk[j].text ?? "")
-            .replace(/\n/g, " ")
-            .replace(/\s+/g, " ")
-            .trim();
-          chunk[j].text = cleaned;
+          const raw = translatedLines[j] ?? chunk[j].text ?? "";
+          chunk[j].text = normalizeSubtitleText(raw);
         }
       })
     );
