@@ -5,6 +5,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const CHUNK_SIZE = 80;
+const CONCURRENCY_LIMIT = 5;
 
 const client = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
@@ -30,7 +31,9 @@ function parseSrt(srt: string): SrtEntry[] {
     if (lines.length < 2) continue;
 
     const index = parseInt(lines[0], 10) || entries.length + 1;
-    const timecodeMatch = lines[1].match(/\d{2}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[,.]\d{3}/);
+    const timecodeMatch = lines[1].match(
+      /\d{2}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[,.]\d{3}/
+    );
     const timecode = timecodeMatch ? lines[1].trim() : "";
     const text = lines.slice(2).join("\n").trim();
 
@@ -41,9 +44,7 @@ function parseSrt(srt: string): SrtEntry[] {
 }
 
 function formatChunkForTranslation(entries: SrtEntry[]): string {
-  return entries
-    .map((e, i) => `${i + 1}\n${e.text}`)
-    .join("\n\n");
+  return entries.map((e, i) => `${i + 1}\n${e.text}`).join("\n\n");
 }
 
 function parseTranslatedChunk(raw: string, count: number): string[] {
@@ -52,7 +53,10 @@ function parseTranslatedChunk(raw: string, count: number): string[] {
 
   for (let i = 0; i < Math.min(blocks.length, count); i++) {
     const lines = blocks[i].split(/\r?\n/);
-    const text = lines.length > 1 ? lines.slice(1).join("\n").trim() : lines[0]?.trim() ?? "";
+    const text =
+      lines.length > 1
+        ? lines.slice(1).join("\n").trim()
+        : lines[0]?.trim() ?? "";
     texts.push(text);
   }
 
@@ -61,6 +65,28 @@ function parseTranslatedChunk(raw: string, count: number): string[] {
 
 function entryToSrt(entry: SrtEntry, text: string): string {
   return `${entry.index}\n${entry.timecode}\n${text}\n`;
+}
+
+async function runWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let index = 0;
+
+  async function worker(): Promise<void> {
+    while (index < items.length) {
+      const i = index++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+
+  const workers = Array(Math.min(limit, items.length))
+    .fill(null)
+    .map(() => worker());
+  await Promise.all(workers);
+  return results;
 }
 
 export async function POST(req: Request) {
@@ -93,22 +119,25 @@ Plot: ${filmContext.Plot ?? ""}
 `
       : "";
 
-    const systemPrompt = `You are a professional subtitle translator.
+    const systemPrompt = `You are a professional film subtitle translator.
 
 ${filmInfo}Rules:
-- Keep the same numbering
-- Keep the same timestamps
-- Only translate the dialogue text
+- Keep subtitle numbering unchanged
+- Keep timestamps unchanged
+- Only translate dialogue
 - Output valid SRT format
-- Do not merge or split subtitles: one input subtitle must produce exactly one output subtitle.`;
+- Do not add commentary`;
 
     const chunks: SrtEntry[][] = [];
     for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
       chunks.push(entries.slice(i, i + CHUNK_SIZE));
     }
 
-    const translateChunk = async (chunk: SrtEntry[]): Promise<string[]> => {
-      const chunkInput = formatChunkForTranslation(chunk);
+    const translateChunk = async (
+      chunk: SrtEntry[],
+      _index: number
+    ): Promise<string[]> => {
+      const chunkText = formatChunkForTranslation(chunk);
 
       const completion = await client.chat.completions.create({
         model: "openai/gpt-4o-mini",
@@ -117,7 +146,11 @@ ${filmInfo}Rules:
           { role: "system", content: systemPrompt },
           {
             role: "user",
-            content: `Translate the following subtitles:\n\n${chunkInput}\n\nReturn only the translated text with the same numbering.`,
+            content: `Translate the following subtitles into Chinese:
+
+${chunkText}
+
+Return only translated SRT lines.`,
           },
         ],
       });
@@ -126,7 +159,11 @@ ${filmInfo}Rules:
       return parseTranslatedChunk(raw, chunk.length);
     };
 
-    const results = await Promise.all(chunks.map((chunk) => translateChunk(chunk)));
+    const results = await runWithConcurrency(
+      chunks,
+      CONCURRENCY_LIMIT,
+      translateChunk
+    );
 
     const translatedTexts: string[] = results.flat();
 
