@@ -61,6 +61,13 @@ Rules:
 - Return translations as a JSON array where each item corresponds to one subtitle line
 - Do not add numbering, timestamps, or any SRT structure—only the translated text strings
 
+Strict output rules:
+- Return ONLY the Chinese translation text
+- Do NOT include the original English subtitles
+- Do NOT output bilingual subtitles
+- Do NOT repeat the source text
+- Each output line must contain only the translated Chinese dialogue
+
 ${filmContextText}`;
 
     const translateChunk = async (
