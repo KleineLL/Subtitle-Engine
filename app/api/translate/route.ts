@@ -18,9 +18,11 @@ const client = new OpenAI({
 
 export async function POST(req: Request) {
   try {
-    console.log("API called");
+    console.log("API /api/translate called");
+
     const body = await req.json();
     const { subtitles } = body;
+    console.log("Request received");
 
     if (!subtitles) {
       return NextResponse.json(
@@ -30,7 +32,7 @@ export async function POST(req: Request) {
     }
 
     const entries = parseSrt(subtitles);
-    console.log("Entries:", entries.length);
+    console.log("Parsed subtitle entries:", entries.length);
     if (entries.length === 0) {
       return NextResponse.json(
         { error: "No valid subtitle entries" },
@@ -44,6 +46,7 @@ export async function POST(req: Request) {
     }
 
     const totalChunks = chunks.length;
+    console.log("Total chunks:", chunks.length);
     const translatedChunks: string[] = [];
 
     const systemPrompt = `You are a professional subtitle translator.
@@ -56,11 +59,10 @@ Rules:
 - Do not add explanations`;
 
     for (let i = 0; i < chunks.length; i++) {
-      console.log("Translating chunk", i + 1, "/", totalChunks);
+      console.log(`Translating chunk ${i + 1}/${chunks.length}`);
 
       const chunkSrt = entriesToSrt(chunks[i]);
 
-      console.log("Calling OpenRouter");
       const completion = await client.chat.completions.create({
         model: "openai/gpt-4o-mini",
         temperature: 0.7,
@@ -79,15 +81,19 @@ Return only the translated subtitles.`,
 
       const translatedChunk =
         completion.choices[0]?.message?.content?.trim() ?? "";
+      console.log("Chunk translated");
 
       translatedChunks.push(translatedChunk);
     }
 
+    console.log("All chunks translated");
+
     const finalSrt = translatedChunks.join("\n\n");
+    console.log("Returning final SRT");
 
     return NextResponse.json({ translated: finalSrt });
   } catch (error) {
-    console.error("Translation error:", error);
+    console.error("Translation error full:", error);
     return NextResponse.json(
       { error: "Translation failed" },
       { status: 500 }
