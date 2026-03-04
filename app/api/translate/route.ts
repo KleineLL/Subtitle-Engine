@@ -3,6 +3,7 @@ import { parseSrt, entriesToSrt } from "@/lib/srt";
 import { openrouter } from "@/lib/openrouter";
 
 const CHUNK_SIZE = 40;
+const CONTEXT_WINDOW = 6;
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -132,7 +133,7 @@ Rules:
       chunks.map(async (chunk, i) => {
         const chunkStartIndex = i * CHUNK_SIZE;
         const contextEntries = entries.slice(
-          Math.max(0, chunkStartIndex - 10),
+          Math.max(0, chunkStartIndex - CONTEXT_WINDOW),
           chunkStartIndex
         );
         const contextText = contextEntries.map((e) => e.text).join("\n");
@@ -144,10 +145,10 @@ Rules:
         );
 
         const userContent = contextText
-          ? `Context from previous dialogue:
+          ? `Previous dialogue context (for understanding only—do NOT translate this):
 ${contextText}
 
-Subtitles to translate (JSON array):
+Translate the following subtitles (JSON array):
 ${jsonInput}
 
 Example output:
@@ -156,7 +157,7 @@ Example output:
   { "id": 1, "text": "但要我说的话……" },
   { "id": 2, "text": "而且他是来真的，大生意。" }
 ]`
-          : `Subtitles to translate (JSON array):
+          : `Translate the following subtitles (JSON array):
 ${jsonInput}
 
 Example output:
