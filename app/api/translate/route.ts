@@ -44,9 +44,13 @@ export async function POST(req: Request) {
       );
     }
 
-    const chunks: typeof entries[] = [];
+    type Chunk = { startIndex: number; items: typeof entries };
+    const chunks: Chunk[] = [];
     for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
-      chunks.push(entries.slice(i, i + CHUNK_SIZE));
+      chunks.push({
+        startIndex: i,
+        items: entries.slice(i, i + CHUNK_SIZE),
+      });
     }
 
     const totalChunks = chunks.length;
@@ -58,10 +62,7 @@ Rules:
 - Translate dialogue naturally into Chinese
 - Adapt slang and tone when appropriate
 - Choose translation strategy dynamically (literal / adaptive / expressive)
-- You must return a JSON array with EXACTLY the same number of items as the input subtitles
-- Each item must correspond to the same numbered subtitle (strict 1-to-1 mapping)
-- Do not merge multiple subtitles into one translation
-- Do not skip or combine subtitle entries
+- Return translations as a JSON array where each item corresponds to one subtitle line
 - Do not add numbering, timestamps, or any SRT structure—only the translated text strings
 
 Strict output rules:
@@ -76,26 +77,27 @@ ${filmContextText}`;
     const translateChunk = async (
       chunk: (typeof entries)[0][],
       textLines: string[],
-      numberedInput: string,
+      chunkText: string,
       contextText: string
     ): Promise<string[]> => {
-      const outputInstruction = `You must return a JSON array with EXACTLY the same number of items as the input subtitles. Each item must correspond to the same numbered subtitle.
-
-Example output:
-["你好哥们", "- 你还好吗宁？ - 嗯。", "去他妈的"]`;
-
       const userContent = contextText
         ? `Context from previous dialogue:
 ${contextText}
 
-Subtitles to translate (numbered):
-${numberedInput}
+Subtitles to translate:
+${chunkText}
 
-Translate each numbered subtitle into Chinese. ${outputInstruction}`
-        : `Subtitles to translate (numbered):
-${numberedInput}
+Translate the subtitle lines into Chinese. Return ONLY a JSON array of translated strings, one per line, in the same order.
 
-Translate each numbered subtitle into Chinese. ${outputInstruction}`;
+Example format:
+["translation of first line", "translation of second line"]`
+        : `Translate the following subtitle lines into Chinese. Return ONLY a JSON array of translated strings, one per line, in the same order.
+
+Example format:
+["translation of first line", "translation of second line"]
+
+Subtitles to translate:
+${chunkText}`;
 
       const completion = await client.chat.completions.create({
         model: "openai/gpt-4o-mini",
@@ -123,7 +125,10 @@ Translate each numbered subtitle into Chinese. ${outputInstruction}`;
     ): string[] => {
       if (lines.length === targetLength) return lines;
       if (lines.length > targetLength) {
-        return lines.slice(0, targetLength);
+        const result = lines.slice(0, targetLength - 1);
+        const joined = lines.slice(targetLength - 1).join(" ");
+        result.push(joined);
+        return result;
       }
       const result = [...lines];
       while (result.length < targetLength) {
@@ -134,54 +139,52 @@ Translate each numbered subtitle into Chinese. ${outputInstruction}`;
 
     await Promise.all(
       chunks.map(async (chunk, i) => {
-        const chunkStartIndex = i * CHUNK_SIZE;
+        const { startIndex, items } = chunk;
         const contextEntries = entries.slice(
-          Math.max(0, chunkStartIndex - 10),
-          chunkStartIndex
+          Math.max(0, startIndex - 10),
+          startIndex
         );
         const contextText = contextEntries.map((e) => e.text).join("\n");
-        const textLines = chunk.map((e) => e.text);
-        const numberedInput = textLines
-          .map((t, idx) => `${idx + 1}. ${t}`)
-          .join("\n");
+        const textLines = items.map((e) => e.text);
+        const chunkText = JSON.stringify(textLines, null, 2);
 
         console.log(`Translating chunk ${i + 1}/${totalChunks}`);
 
         let translatedLines = await translateChunk(
-          chunk,
+          items,
           textLines,
-          numberedInput,
+          chunkText,
           contextText
         );
 
-        if (translatedLines.length !== chunk.length) {
+        if (translatedLines.length !== items.length) {
           console.warn(
-            `Translation line mismatch (chunk ${i + 1}): got ${translatedLines.length}, expected ${chunk.length}. Retrying...`
+            `Translation line mismatch (chunk ${i + 1}): got ${translatedLines.length}, expected ${items.length}. Retrying...`
           );
           translatedLines = await translateChunk(
-            chunk,
+            items,
             textLines,
-            numberedInput,
+            chunkText,
             contextText
           );
         }
 
-        if (translatedLines.length !== chunk.length) {
+        if (translatedLines.length !== items.length) {
           console.warn(
             `Translation line mismatch persists. Using fallback (chunk ${i + 1}).`
           );
           translatedLines = normalizeToLength(
             translatedLines,
-            chunk.length,
+            items.length,
             textLines
           );
         }
 
-        for (let j = 0; j < chunk.length; j++) {
-          const cleaned = (translatedLines[j] ?? chunk[j].text ?? "")
+        for (let j = 0; j < items.length; j++) {
+          const cleaned = (translatedLines[j] ?? items[j].text ?? "")
             .replace(/\n/g, " ")
             .trim();
-          chunk[j].text = cleaned;
+          entries[startIndex + j].text = cleaned;
         }
       })
     );
