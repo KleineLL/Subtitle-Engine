@@ -44,13 +44,9 @@ export async function POST(req: Request) {
       );
     }
 
-    type Chunk = { startIndex: number; items: typeof entries };
-    const chunks: Chunk[] = [];
+    const chunks: typeof entries[] = [];
     for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
-      chunks.push({
-        startIndex: i,
-        items: entries.slice(i, i + CHUNK_SIZE),
-      });
+      chunks.push(entries.slice(i, i + CHUNK_SIZE));
     }
 
     const totalChunks = chunks.length;
@@ -65,22 +61,62 @@ Rules:
 - Return translations as a JSON array where each item corresponds to one subtitle line
 - Do not add numbering, timestamps, or any SRT structure—only the translated text strings
 
-Strict output rules:
-- Return ONLY the Chinese translation text
-- Do NOT include the original English subtitles
-- Do NOT output bilingual subtitles
-- Do NOT repeat the source text
-- Each output line must contain only the translated Chinese dialogue
-
 ${filmContextText}`;
 
     const translateChunk = async (
-      lines: string[],
-      chunkText: string,
-      contextText: string
+      chunk: (typeof entries)[0][],
+      textLines: string[],
+      userContent: string
     ): Promise<string[]> => {
-      const userContent = contextText
-        ? `Context from previous dialogue:
+      const completion = await client.chat.completions.create({
+        model: "openai/gpt-4o-mini",
+        temperature: 0.3,
+        messages: [
+          { role: "system", content: systemPromptBase },
+          { role: "user", content: userContent },
+        ],
+      });
+      const rawResponse = (completion.choices[0]?.message?.content ?? "").trim();
+      const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : rawResponse;
+      try {
+        return JSON.parse(jsonStr) as string[];
+      } catch {
+        return textLines.map((t) => t);
+      }
+    };
+
+    const normalizeToChunkLength = (
+      translatedLines: string[],
+      chunk: (typeof entries)[0][]
+    ): string[] => {
+      const expectedLen = chunk.length;
+      if (translatedLines.length === expectedLen) return translatedLines;
+      if (translatedLines.length > expectedLen) {
+        const head = translatedLines.slice(0, expectedLen - 1);
+        const tail = translatedLines.slice(expectedLen - 1).join(" ");
+        return [...head, tail];
+      }
+      const result = [...translatedLines];
+      while (result.length < expectedLen) {
+        result.push(chunk[result.length].text);
+      }
+      return result.slice(0, expectedLen);
+    };
+
+    await Promise.all(
+      chunks.map(async (chunk, i) => {
+        const chunkStartIndex = i * CHUNK_SIZE;
+        const contextEntries = entries.slice(
+          Math.max(0, chunkStartIndex - 10),
+          chunkStartIndex
+        );
+        const contextText = contextEntries.map((e) => e.text).join("\n");
+        const textLines = chunk.map((e) => e.text);
+        const chunkText = JSON.stringify(textLines, null, 2);
+
+        const userContent = contextText
+          ? `Context from previous dialogue:
 ${contextText}
 
 Subtitles to translate:
@@ -90,7 +126,7 @@ Translate the subtitle lines into Chinese. Return ONLY a JSON array of translate
 
 Example format:
 ["translation of first line", "translation of second line"]`
-        : `Translate the following subtitle lines into Chinese. Return ONLY a JSON array of translated strings, one per line, in the same order.
+          : `Translate the following subtitle lines into Chinese. Return ONLY a JSON array of translated strings, one per line, in the same order.
 
 Example format:
 ["translation of first line", "translation of second line"]
@@ -98,84 +134,28 @@ Example format:
 Subtitles to translate:
 ${chunkText}`;
 
-      const completion = await client.chat.completions.create({
-        model: "openai/gpt-4o-mini",
-        temperature: 0.3,
-        messages: [
-          { role: "system", content: systemPromptBase },
-          { role: "user", content: userContent },
-        ],
-      });
-
-      const rawResponse = (completion.choices[0]?.message?.content ?? "").trim();
-      const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
-      const jsonStr = jsonMatch ? jsonMatch[0] : rawResponse;
-      try {
-        return JSON.parse(jsonStr) as string[];
-      } catch {
-        return [...lines];
-      }
-    };
-
-    const normalizeToLength = (
-      lines: string[],
-      targetLength: number,
-      originals: string[]
-    ): string[] => {
-      if (lines.length === targetLength) return lines;
-      if (lines.length > targetLength) {
-        const result = lines.slice(0, targetLength - 1);
-        const joined = lines.slice(targetLength - 1).join(" ");
-        result.push(joined);
-        return result;
-      }
-      const result = [...lines];
-      while (result.length < targetLength) {
-        result.push(originals[result.length] ?? "");
-      }
-      return result.slice(0, targetLength);
-    };
-
-    await Promise.all(
-      chunks.map(async (chunk, i) => {
-        const { startIndex, items } = chunk;
-        const lines = items.map((e) => e.text);
-        const chunkText = JSON.stringify(lines, null, 2);
-
-        const contextEntries = entries.slice(
-          Math.max(0, startIndex - 10),
-          startIndex
-        );
-        const contextText = contextEntries.map((e) => e.text).join("\n");
-
         console.log(`Translating chunk ${i + 1}/${totalChunks}`);
 
-        let translations = await translateChunk(lines, chunkText, contextText);
+        let translatedLines = await translateChunk(chunk, textLines, userContent);
 
-        if (translations.length !== items.length) {
+        if (translatedLines.length !== chunk.length) {
           console.warn(
-            `Translation line mismatch (chunk ${i + 1}): got ${translations.length}, expected ${items.length}. Retrying...`
+            "Translation line mismatch. Retrying...",
+            `expected ${chunk.length}, got ${translatedLines.length}`
           );
-          translations = await translateChunk(lines, chunkText, contextText);
+          translatedLines = await translateChunk(chunk, textLines, userContent);
         }
 
-        if (translations.length !== items.length) {
-          console.warn(
-            `Translation line mismatch persists. Using fallback (chunk ${i + 1}).`
-          );
-          translations = normalizeToLength(
-            translations,
-            items.length,
-            lines
-          );
+        if (translatedLines.length !== chunk.length) {
+          translatedLines = normalizeToChunkLength(translatedLines, chunk);
         }
 
-        translations.forEach((t, idx) => {
-          const cleaned = (t ?? items[idx]?.text ?? "")
+        for (let j = 0; j < chunk.length; j++) {
+          const cleaned = (translatedLines[j] ?? chunk[j].text ?? "")
             .replace(/\n/g, " ")
             .trim();
-          entries[startIndex + idx].text = cleaned;
-        });
+          chunk[j].text = cleaned;
+        }
       })
     );
 
