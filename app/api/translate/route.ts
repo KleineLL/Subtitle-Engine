@@ -22,9 +22,16 @@ export async function POST(req: Request) {
     const { subtitles, filmContext } = body;
     console.log("Request received");
 
-    const filmContextText = filmContext
-      ? `Film context:\n${filmContext.Title ?? ""} (${filmContext.Year ?? ""})\n${filmContext.Genre ?? ""}${filmContext.Plot ? `\n${filmContext.Plot}` : ""}`
-      : "(No film context provided)";
+    const filmContextDisplay =
+      filmContext && typeof filmContext === "object"
+        ? Object.entries(filmContext)
+            .map(([k, v]) =>
+              Array.isArray(v) ? `${k}: ${(v as unknown[]).join(", ")}` : `${k}: ${String(v)}`
+            )
+            .join("\n")
+        : filmContext && typeof filmContext === "string"
+          ? filmContext
+          : "No film context provided.";
 
     if (!subtitles) {
       return NextResponse.json(
@@ -52,18 +59,26 @@ export async function POST(req: Request) {
 
     const systemPrompt = `You are a professional subtitle translator.
 
+Film context:
+${filmContextDisplay}
+
+Use this context to understand:
+- cultural references
+- slang
+- character relationships
+- tone and humor
+
+Translate subtitles into natural Chinese.
+
 You will receive a JSON array of subtitle entries.
 Translate ONLY the text field into Chinese.
-
 Return a JSON array with the same ids.
 
 Rules:
 - do not skip any entries
 - do not include English
 - keep the same ids
-- return only Chinese translations
-
-${filmContextText}`;
+- return only Chinese translations`;
 
     type JsonEntry = { id: number; text: string };
 

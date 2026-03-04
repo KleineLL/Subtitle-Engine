@@ -79,10 +79,32 @@ export default function Home() {
     try {
       const text = await srtFile.text();
 
+      let filmContext: Record<string, unknown> | undefined;
+      if (selectedFilm) {
+        try {
+          const fcRes = await fetch("/api/film-context", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: selectedFilm.Title,
+              year: selectedFilm.Year,
+            }),
+          });
+          if (fcRes.ok) {
+            filmContext = (await fcRes.json()) as Record<string, unknown>;
+          }
+        } catch {
+          // Continue without film context
+        }
+      }
+
       const res = await fetch("/api/translate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subtitles: text }),
+        body: JSON.stringify({
+          subtitles: text,
+          filmContext: filmContext,
+        }),
       });
 
       const data = await res.json();
