@@ -33,6 +33,7 @@ export default function Home() {
   const [srtFile, setSrtFile] = useState<File | null>(null);
   const [translatedSubtitles, setTranslatedSubtitles] = useState("");
   const [isTranslating, setIsTranslating] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   const handleSearch = async () => {
     if (!filmTitle.trim() && !imdbId.trim()) return;
@@ -75,6 +76,7 @@ export default function Home() {
     if (!srtFile) return;
 
     setIsTranslating(true);
+    setProgress(0);
 
     try {
       const text = await srtFile.text();
@@ -107,18 +109,71 @@ export default function Home() {
         }),
       });
 
-      const data = await res.json();
-
       if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "Translation failed");
       }
 
-      setTranslatedSubtitles(data.translated ?? "");
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      if (!reader) throw new Error("No response body");
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const msg = JSON.parse(line) as {
+              progress?: number;
+              status?: string;
+              translated?: string;
+              error?: string;
+            };
+            if (msg.progress != null) setProgress(msg.progress);
+            if (msg.status === "done" && msg.translated != null) {
+              setTranslatedSubtitles(msg.translated);
+            }
+            if (msg.status === "error" && msg.error) {
+              throw new Error(msg.error);
+            }
+          } catch (e) {
+            if (e instanceof SyntaxError) continue;
+            throw e;
+          }
+        }
+      }
+
+      if (buffer.trim()) {
+        try {
+          const msg = JSON.parse(buffer) as {
+            progress?: number;
+            status?: string;
+            translated?: string;
+            error?: string;
+          };
+          if (msg.progress != null) setProgress(msg.progress);
+          if (msg.status === "done" && msg.translated != null) {
+            setTranslatedSubtitles(msg.translated);
+          }
+          if (msg.status === "error" && msg.error) {
+            throw new Error(msg.error);
+          }
+        } catch (e) {
+          if (!(e instanceof SyntaxError)) throw e;
+        }
+      }
     } catch (err) {
       console.error(err);
       alert(err instanceof Error ? err.message : "Translation failed.");
     } finally {
       setIsTranslating(false);
+      setProgress(0);
     }
   };
 
@@ -142,6 +197,7 @@ export default function Home() {
     setImdbId("");
     setSrtFile(null);
     setTranslatedSubtitles("");
+    setProgress(0);
   };
 
   return (
@@ -325,6 +381,20 @@ export default function Home() {
               >
                 {isTranslating ? "Translating…" : "Translate"}
               </button>
+
+              {isTranslating && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm text-stone-600">
+                    <span>{progress}% Translating subtitles…</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-stone-200">
+                    <div
+                      className="progress-fill h-full bg-stone-700 transition-[width] duration-300 ease-out"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
             </form>
 
             <div className="mt-6">

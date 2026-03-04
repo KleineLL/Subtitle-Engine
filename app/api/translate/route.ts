@@ -129,23 +129,31 @@ Rules:
       return parseJsonOutput(rawResponse, chunk);
     };
 
-    await Promise.all(
-      chunks.map(async (chunk, i) => {
-        const chunkStartIndex = i * CHUNK_SIZE;
-        const contextEntries = entries.slice(
-          Math.max(0, chunkStartIndex - CONTEXT_WINDOW),
-          chunkStartIndex
-        );
-        const contextText = contextEntries.map((e) => e.text).join("\n");
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          controller.enqueue(
+            encoder.encode(JSON.stringify({ progress: 0, status: "translating" }) + "\n")
+          );
 
-        const jsonInput = JSON.stringify(
-          chunk.map((e, idx) => ({ id: idx, text: e.text })),
-          null,
-          2
-        );
+          for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            const chunkStartIndex = i * CHUNK_SIZE;
+            const contextEntries = entries.slice(
+              Math.max(0, chunkStartIndex - CONTEXT_WINDOW),
+              chunkStartIndex
+            );
+            const contextText = contextEntries.map((e) => e.text).join("\n");
 
-        const userContent = contextText
-          ? `Previous dialogue context (for understanding only—do NOT translate this):
+            const jsonInput = JSON.stringify(
+              chunk.map((e, idx) => ({ id: idx, text: e.text })),
+              null,
+              2
+            );
+
+            const userContent = contextText
+              ? `Previous dialogue context (for understanding only—do NOT translate this):
 ${contextText}
 
 Translate the following subtitles (JSON array):
@@ -157,7 +165,7 @@ Example output:
   { "id": 1, "text": "但要我说的话……" },
   { "id": 2, "text": "而且他是来真的，大生意。" }
 ]`
-          : `Translate the following subtitles (JSON array):
+              : `Translate the following subtitles (JSON array):
 ${jsonInput}
 
 Example output:
@@ -167,34 +175,71 @@ Example output:
   { "id": 2, "text": "而且他是来真的，大生意。" }
 ]`;
 
-        console.log(`Translating chunk ${i + 1}/${totalChunks}`);
+            console.log(`Translating chunk ${i + 1}/${totalChunks}`);
 
-        let result = await translateChunk(chunk, jsonInput, userContent);
+            let result = await translateChunk(chunk, jsonInput, userContent);
 
-        if (!result) {
-          console.warn("JSON parse failed. Retrying translation...");
-          result = await translateChunk(chunk, jsonInput, userContent);
-        }
-
-        if (result) {
-          result.forEach((item) => {
-            const targetIndex = chunkStartIndex + item.id;
-            if (targetIndex >= 0 && targetIndex < entries.length) {
-              entries[targetIndex].text = cleanChineseSpacing(item.text);
+            if (!result) {
+              console.warn("JSON parse failed. Retrying translation...");
+              result = await translateChunk(chunk, jsonInput, userContent);
             }
-          });
-        } else {
-          console.error(`Chunk ${i + 1}: JSON parsing failed after retry. Skipping chunk.`);
+
+            if (result) {
+              result.forEach((item) => {
+                const targetIndex = chunkStartIndex + item.id;
+                if (targetIndex >= 0 && targetIndex < entries.length) {
+                  entries[targetIndex].text = cleanChineseSpacing(item.text);
+                }
+              });
+            } else {
+              console.error(
+                `Chunk ${i + 1}: JSON parsing failed after retry. Skipping chunk.`
+              );
+            }
+
+            const progress = Math.round(((i + 1) / totalChunks) * 100);
+            controller.enqueue(
+              encoder.encode(
+                JSON.stringify({ progress, status: "translating" }) + "\n"
+              )
+            );
+          }
+
+          console.log("All chunks translated");
+          const finalSrt = entriesToSrt(entries);
+
+          controller.enqueue(
+            encoder.encode(
+              JSON.stringify({
+                progress: 100,
+                status: "done",
+                translated: finalSrt,
+              }) + "\n"
+            )
+          );
+        } catch (err) {
+          console.error("Stream error:", err);
+          controller.enqueue(
+            encoder.encode(
+              JSON.stringify({
+                progress: 0,
+                status: "error",
+                error: "Translation failed",
+              }) + "\n"
+            )
+          );
+        } finally {
+          controller.close();
         }
-      })
-    );
+      },
+    });
 
-    console.log("All chunks translated");
-
-    const finalSrt = entriesToSrt(entries);
-    console.log("Returning final SRT");
-
-    return NextResponse.json({ translated: finalSrt });
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "application/x-ndjson",
+        "Transfer-Encoding": "chunked",
+      },
+    });
   } catch (error) {
     console.error("Translation error full:", error);
     return NextResponse.json(
