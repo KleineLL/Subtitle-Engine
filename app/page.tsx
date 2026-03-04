@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 type FilmDetail = {
   Title: string;
@@ -34,6 +34,19 @@ export default function Home() {
   const [translatedSubtitles, setTranslatedSubtitles] = useState("");
   const [isTranslating, setIsTranslating] = useState(false);
   const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    if (!isTranslating) return;
+
+    const interval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 90) return prev;
+        return prev + Math.random() * 10;
+      });
+    }, 800);
+
+    return () => clearInterval(interval);
+  }, [isTranslating]);
 
   const handleSearch = async () => {
     if (!filmTitle.trim() && !imdbId.trim()) return;
@@ -76,7 +89,7 @@ export default function Home() {
     if (!srtFile) return;
 
     setIsTranslating(true);
-    setProgress(0);
+    setProgress(5);
 
     try {
       const text = await srtFile.text();
@@ -135,7 +148,6 @@ export default function Home() {
               translated?: string;
               error?: string;
             };
-            if (msg.progress != null) setProgress(msg.progress);
             if (msg.status === "done" && msg.translated != null) {
               setTranslatedSubtitles(msg.translated);
             }
@@ -157,7 +169,6 @@ export default function Home() {
             translated?: string;
             error?: string;
           };
-          if (msg.progress != null) setProgress(msg.progress);
           if (msg.status === "done" && msg.translated != null) {
             setTranslatedSubtitles(msg.translated);
           }
@@ -172,8 +183,8 @@ export default function Home() {
       console.error(err);
       alert(err instanceof Error ? err.message : "Translation failed.");
     } finally {
+      setProgress(100);
       setIsTranslating(false);
-      setProgress(0);
     }
   };
 
@@ -385,12 +396,12 @@ export default function Home() {
               {isTranslating && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm text-stone-600">
-                    <span>{progress}% Translating subtitles…</span>
+                    <span>{Math.min(100, Math.round(progress))}% Translating subtitles…</span>
                   </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-stone-200">
+                  <div className="progress-container h-2 overflow-hidden rounded-full bg-stone-200">
                     <div
                       className="progress-fill h-full bg-stone-700 transition-[width] duration-300 ease-out"
-                      style={{ width: `${progress}%` }}
+                      style={{ width: `${Math.min(100, progress)}%` }}
                     />
                   </div>
                 </div>
