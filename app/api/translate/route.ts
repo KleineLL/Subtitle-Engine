@@ -52,7 +52,6 @@ export async function POST(req: Request) {
     const totalChunks = chunks.length;
     console.log("Total chunks:", chunks.length);
 
-    let storyMemory = "";
     const systemPromptBase = `You are a professional subtitle translator.
 
 Rules:
@@ -62,69 +61,58 @@ Rules:
 - Return translations as a JSON array where each item corresponds to one subtitle line
 - Do not add numbering, timestamps, or any SRT structure—only the translated text strings
 
-${filmContextText}
+${filmContextText}`;
 
-Story so far:
-`;
+    await Promise.all(
+      chunks.map(async (chunk, i) => {
+        const chunkStartIndex = i * CHUNK_SIZE;
+        const contextEntries = entries.slice(
+          Math.max(0, chunkStartIndex - 10),
+          chunkStartIndex
+        );
+        const contextText = contextEntries.map((e) => e.text).join("\n");
 
-    for (let i = 0; i < chunks.length; i++) {
-      console.log(`Translating chunk ${i + 1}/${totalChunks}`);
+        console.log(`Translating chunk ${i + 1}/${totalChunks}`);
 
-      const chunk = chunks[i];
-      const textLines = chunk.map((e) => e.text);
-      const textLinesJson = JSON.stringify(textLines, null, 2);
-      const systemPrompt = `${systemPromptBase}${storyMemory || "(This is the first chunk.)"}`;
+        const textLines = chunk.map((e) => e.text);
+        const textLinesJson = JSON.stringify(textLines, null, 2);
 
-      const completion = await client.chat.completions.create({
-        model: "openai/gpt-4o-mini",
-        temperature: 0.3,
-        messages: [
-          { role: "system", content: systemPrompt },
-          {
-            role: "user",
-            content: `Translate the following subtitle lines into Chinese. Return ONLY a JSON array of translated strings, one per line, in the same order.
+        const completion = await client.chat.completions.create({
+          model: "openai/gpt-4o-mini",
+          temperature: 0.3,
+          messages: [
+            { role: "system", content: systemPromptBase },
+            {
+              role: "user",
+              content: `Translate the following subtitle lines into Chinese. Return ONLY a JSON array of translated strings, one per line, in the same order.
 
 Example format:
 ["translation of first line", "translation of second line"]
 
-Subtitle lines to translate:
+${contextText ? `Context from previous dialogue:\n${contextText}\n\n` : ""}Subtitles to translate:
 ${textLinesJson}`,
-          },
-        ],
-      });
+            },
+          ],
+        });
 
-      const rawResponse = (completion.choices[0]?.message?.content ?? "").trim();
-      const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
-      const jsonStr = jsonMatch ? jsonMatch[0] : rawResponse;
-      let translatedLines: string[];
-      try {
-        translatedLines = JSON.parse(jsonStr) as string[];
-      } catch {
-        translatedLines = textLines.map((t) => t);
-      }
+        const rawResponse = (completion.choices[0]?.message?.content ?? "").trim();
+        const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
+        const jsonStr = jsonMatch ? jsonMatch[0] : rawResponse;
+        let translatedLines: string[];
+        try {
+          translatedLines = JSON.parse(jsonStr) as string[];
+        } catch {
+          translatedLines = textLines.map((t) => t);
+        }
 
-      for (let j = 0; j < chunk.length; j++) {
-        const cleaned = (translatedLines[j] ?? chunk[j].text ?? "")
-          .replace(/\n/g, " ")
-          .trim();
-        chunk[j].text = cleaned;
-      }
-
-      const translatedTextForSummary = chunk.map((e) => e.text).join(" ");
-      const summaryCompletion = await client.chat.completions.create({
-        model: "openai/gpt-4o-mini",
-        temperature: 0.2,
-        messages: [
-          {
-            role: "user",
-            content: `Summarize the dialogue in 1–2 sentences so future chunks understand the story context:\n\n${translatedTextForSummary}`,
-          },
-        ],
-      });
-
-      const summary = (summaryCompletion.choices[0]?.message?.content ?? "").trim();
-      storyMemory = summary ? `${storyMemory ? storyMemory + "\n\n" : ""}${summary}` : storyMemory;
-    }
+        for (let j = 0; j < chunk.length; j++) {
+          const cleaned = (translatedLines[j] ?? chunk[j].text ?? "")
+            .replace(/\n/g, " ")
+            .trim();
+          chunk[j].text = cleaned;
+        }
+      })
+    );
 
     console.log("All chunks translated");
 
