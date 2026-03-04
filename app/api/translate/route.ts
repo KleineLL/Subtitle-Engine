@@ -13,7 +13,7 @@ const client = new OpenAI({
   },
 });
 
-const CHUNK_SIZE = 15;
+const CHUNK_SIZE = 80;
 
 type SrtEntry = {
   index: number;
