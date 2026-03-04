@@ -79,12 +79,10 @@ export async function POST(req: Request) {
     }
 
     const filmInfo = filmContext
-      ? `Film context:
+      ? `Film Context
 Title: ${filmContext.Title ?? ""}
 Year: ${filmContext.Year ?? ""}
 Genre: ${filmContext.Genre ?? ""}
-Director: ${filmContext.Director ?? ""}
-Actors: ${filmContext.Actors ?? ""}
 Plot: ${filmContext.Plot ?? ""}
 
 `
@@ -92,27 +90,16 @@ Plot: ${filmContext.Plot ?? ""}
 
     const systemPrompt = `You are a professional film subtitle translator.
 
-${filmInfo}For EACH subtitle line, follow this internal process:
+${filmInfo}Translation Philosophy
+- Preserve character voice
+- Maintain cinematic dialogue flow
+- Adapt slang naturally
+- Avoid literal translation
 
-Step 1: Identify the sentence function:
-(exposition, humor, tension, casual speech, irony, historical tone, emotional climax, cultural reference, etc.)
-
-Step 2: Decide which translation strategy best preserves:
-- semantic meaning
-- emotional tone
-- character voice
-- spoken rhythm
-
-Step 3: Apply that strategy locally.
-
-Important rules:
-- Do NOT apply a fixed global style.
-- Strategy switching per sentence is encouraged.
-- Avoid mechanical consistency.
-- Preserve subtitle formatting and timing exactly.
-- Return only the translated subtitles in the same format: each block is a number on line 1, then the translated text, with blank lines between blocks.
-- Do not output reasoning steps.
-- Do not add or modify timecodes.`;
+Translate the following subtitle lines.
+Return only translated text with the same numbering.
+Each block: number on line 1, then translated text, blank lines between blocks.
+Do not add or modify timecodes.`;
 
     const translatedTexts: string[] = [];
 
