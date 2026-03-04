@@ -63,6 +63,69 @@ Rules:
 
 ${filmContextText}`;
 
+    const translateChunk = async (
+      chunk: (typeof entries)[0][],
+      textLines: string[],
+      chunkText: string,
+      contextText: string
+    ): Promise<string[]> => {
+      const userContent = contextText
+        ? `Context from previous dialogue:
+${contextText}
+
+Subtitles to translate:
+${chunkText}
+
+Translate the subtitle lines into Chinese. Return ONLY a JSON array of translated strings, one per line, in the same order.
+
+Example format:
+["translation of first line", "translation of second line"]`
+        : `Translate the following subtitle lines into Chinese. Return ONLY a JSON array of translated strings, one per line, in the same order.
+
+Example format:
+["translation of first line", "translation of second line"]
+
+Subtitles to translate:
+${chunkText}`;
+
+      const completion = await client.chat.completions.create({
+        model: "openai/gpt-4o-mini",
+        temperature: 0.3,
+        messages: [
+          { role: "system", content: systemPromptBase },
+          { role: "user", content: userContent },
+        ],
+      });
+
+      const rawResponse = (completion.choices[0]?.message?.content ?? "").trim();
+      const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : rawResponse;
+      try {
+        return JSON.parse(jsonStr) as string[];
+      } catch {
+        return textLines.map((t) => t);
+      }
+    };
+
+    const normalizeToLength = (
+      lines: string[],
+      targetLength: number,
+      originals: string[]
+    ): string[] => {
+      if (lines.length === targetLength) return lines;
+      if (lines.length > targetLength) {
+        const result = lines.slice(0, targetLength - 1);
+        const joined = lines.slice(targetLength - 1).join(" ");
+        result.push(joined);
+        return result;
+      }
+      const result = [...lines];
+      while (result.length < targetLength) {
+        result.push(originals[result.length] ?? "");
+      }
+      return result.slice(0, targetLength);
+    };
+
     await Promise.all(
       chunks.map(async (chunk, i) => {
         const chunkStartIndex = i * CHUNK_SIZE;
@@ -76,43 +139,34 @@ ${filmContextText}`;
 
         console.log(`Translating chunk ${i + 1}/${totalChunks}`);
 
-        const completion = await client.chat.completions.create({
-          model: "openai/gpt-4o-mini",
-          temperature: 0.3,
-          messages: [
-            { role: "system", content: systemPromptBase },
-            {
-              role: "user",
-              content: contextText
-                ? `Context from previous dialogue:
-${contextText}
+        let translatedLines = await translateChunk(
+          chunk,
+          textLines,
+          chunkText,
+          contextText
+        );
 
-Subtitles to translate:
-${chunkText}
+        if (translatedLines.length !== chunk.length) {
+          console.warn(
+            `Translation line mismatch (chunk ${i + 1}): got ${translatedLines.length}, expected ${chunk.length}. Retrying...`
+          );
+          translatedLines = await translateChunk(
+            chunk,
+            textLines,
+            chunkText,
+            contextText
+          );
+        }
 
-Translate the subtitle lines into Chinese. Return ONLY a JSON array of translated strings, one per line, in the same order.
-
-Example format:
-["translation of first line", "translation of second line"]`
-                : `Translate the following subtitle lines into Chinese. Return ONLY a JSON array of translated strings, one per line, in the same order.
-
-Example format:
-["translation of first line", "translation of second line"]
-
-Subtitles to translate:
-${chunkText}`,
-            },
-          ],
-        });
-
-        const rawResponse = (completion.choices[0]?.message?.content ?? "").trim();
-        const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
-        const jsonStr = jsonMatch ? jsonMatch[0] : rawResponse;
-        let translatedLines: string[];
-        try {
-          translatedLines = JSON.parse(jsonStr) as string[];
-        } catch {
-          translatedLines = textLines.map((t) => t);
+        if (translatedLines.length !== chunk.length) {
+          console.warn(
+            `Translation line mismatch persists. Using fallback (chunk ${i + 1}).`
+          );
+          translatedLines = normalizeToLength(
+            translatedLines,
+            chunk.length,
+            textLines
+          );
         }
 
         for (let j = 0; j < chunk.length; j++) {
