@@ -18,6 +18,7 @@ const client = new OpenAI({
 
 export async function POST(req: Request) {
   try {
+    console.log("API called");
     const body = await req.json();
     const { subtitles } = body;
 
@@ -29,6 +30,7 @@ export async function POST(req: Request) {
     }
 
     const entries = parseSrt(subtitles);
+    console.log("Entries:", entries.length);
     if (entries.length === 0) {
       return NextResponse.json(
         { error: "No valid subtitle entries" },
@@ -58,6 +60,7 @@ Rules:
 
       const chunkSrt = entriesToSrt(chunks[i]);
 
+      console.log("Calling OpenRouter");
       const completion = await client.chat.completions.create({
         model: "openai/gpt-4o-mini",
         temperature: 0.7,
