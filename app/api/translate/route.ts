@@ -35,6 +35,12 @@ function parseSrt(srt: string): SrtEntry[] {
   return entries;
 }
 
+const CONTEXT_LINES = 3;
+
+function formatEntriesForContext(entries: SrtEntry[]): string {
+  return entries.map((e) => `${e.index}\n${e.text}`).join("\n\n");
+}
+
 function formatChunkForTranslation(entries: SrtEntry[]): string {
   return entries
     .map((e, i) => `${i + 1}\n${e.text}`)
@@ -96,7 +102,8 @@ ${filmInfo}Translation Philosophy
 - Adapt slang naturally
 - Avoid literal translation
 
-Translate the following subtitle lines.
+You may receive previous subtitle lines as context. Use them only for understanding dialogue flow—do not translate them. Translate only the current chunk.
+
 Return only translated text with the same numbering.
 Each block: number on line 1, then translated text, blank lines between blocks.
 Do not add or modify timecodes.`;
@@ -105,14 +112,20 @@ Do not add or modify timecodes.`;
 
     for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
       const chunk = entries.slice(i, i + CHUNK_SIZE);
+      const previousEntries = entries.slice(Math.max(0, i - CONTEXT_LINES), i);
+      const previousContext = previousEntries.length
+        ? `Previous Context (do not translate):\n${formatEntriesForContext(previousEntries)}\n\n`
+        : "";
       const chunkInput = formatChunkForTranslation(chunk);
+
+      const userContent = `${previousContext}Translate these subtitles:\n${chunkInput}`;
 
       const completion = await client.chat.completions.create({
         model: "gpt-4o-mini",
         temperature: 0.7,
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Translate only the subtitle text. Preserve timecodes by not changing the format.\n\n${chunkInput}` },
+          { role: "user", content: userContent },
         ],
       });
 
