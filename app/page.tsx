@@ -33,6 +33,7 @@ export default function Home() {
   const [srtFile, setSrtFile] = useState<File | null>(null);
   const [translatedSubtitles, setTranslatedSubtitles] = useState("");
   const [isTranslating, setIsTranslating] = useState(false);
+  const [translationProgress, setTranslationProgress] = useState(0);
 
   const handleSearch = async () => {
     if (!filmTitle.trim() && !imdbId.trim()) return;
@@ -75,11 +76,12 @@ export default function Home() {
     if (!srtFile) return;
 
     setIsTranslating(true);
+    setTranslationProgress(0);
 
     try {
       const text = await srtFile.text();
 
-      const res = await fetch("/api/translate", {
+      const startRes = await fetch("/api/start-translation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -89,16 +91,30 @@ export default function Home() {
         }),
       });
 
-      if (!res.ok) {
-        throw new Error("Translation failed");
+      if (!startRes.ok) {
+        throw new Error("Failed to start translation");
       }
 
-      const data = await res.json();
-      setTranslatedSubtitles(data.translated);
+      const { jobId } = await startRes.json();
+
+      for (;;) {
+        const statusRes = await fetch(`/api/translation-status?jobId=${jobId}`);
+        if (!statusRes.ok) throw new Error("Failed to get status");
+
+        const status = await statusRes.json();
+        setTranslationProgress(status.progress ?? 0);
+
+        if (status.done) {
+          if (status.error) throw new Error(status.error);
+          setTranslatedSubtitles(status.result ?? "");
+          break;
+        }
+
+        await new Promise((r) => setTimeout(r, 2000));
+      }
     } catch (err) {
       console.error(err);
-      alert("Translation failed.");
-    } finally {
+      alert(err instanceof Error ? err.message : "Translation failed.");
       setIsTranslating(false);
     }
   };
@@ -123,6 +139,7 @@ export default function Home() {
     setImdbId("");
     setSrtFile(null);
     setTranslatedSubtitles("");
+    setTranslationProgress(0);
   };
 
   return (
@@ -306,6 +323,18 @@ export default function Home() {
               >
                 {isTranslating ? "Translating…" : "Translate"}
               </button>
+
+              {isTranslating && (
+                <div className="space-y-1">
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-stone-200">
+                    <div
+                      className="h-full bg-stone-800 transition-all duration-300"
+                      style={{ width: `${translationProgress}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-stone-500">{translationProgress}%</p>
+                </div>
+              )}
             </form>
 
             <div className="mt-6">
