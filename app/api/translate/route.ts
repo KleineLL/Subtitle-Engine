@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { parseSrt, entriesToSrt } from "@/lib/srt";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -16,7 +17,7 @@ const client = new OpenAI({
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { subtitles, filmContext } = body;
+    const { subtitles } = body;
 
     if (!subtitles) {
       return NextResponse.json(
@@ -25,35 +26,36 @@ export async function POST(req: Request) {
       );
     }
 
-    const filmInfo = filmContext
-      ? `Film Context
-Title: ${filmContext.Title ?? ""}
-Year: ${filmContext.Year ?? ""}
-Genre: ${filmContext.Genre ?? ""}
-Plot: ${filmContext.Plot ?? ""}
+    const entries = parseSrt(subtitles);
+    if (entries.length === 0) {
+      return NextResponse.json(
+        { error: "No valid subtitle entries" },
+        { status: 400 }
+      );
+    }
 
-`
-      : "";
-
-    const systemPrompt = `You are a professional subtitle translator.
-
-${filmInfo}Rules:
-- Keep numbering unchanged
-- Keep timestamps unchanged
-- Only translate dialogue lines
-- Output valid SRT format
-- Do not add explanations`;
+    const fullSrtText = entriesToSrt(entries);
 
     const completion = await client.chat.completions.create({
       model: "openai/gpt-4o-mini",
       temperature: 0.7,
       messages: [
-        { role: "system", content: systemPrompt },
+        {
+          role: "system",
+          content: `You are a professional subtitle translator.
+
+Rules:
+- Keep subtitle numbering unchanged
+- Keep timestamps unchanged
+- Only translate dialogue
+- Return valid SRT format
+- Do not add explanations`,
+        },
         {
           role: "user",
           content: `Translate the following subtitles into Chinese and return valid SRT:
 
-${subtitles}
+${fullSrtText}
 
 Return only the translated subtitles.`,
         },
