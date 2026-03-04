@@ -47,44 +47,32 @@ export async function POST(req: Request) {
 
     const totalChunks = chunks.length;
     console.log("Total chunks:", chunks.length);
-    const translatedChunks: string[] = [];
 
-    const systemPrompt = `You are a professional subtitle translator.
+    const translatedChunks = await Promise.all(
+      chunks.map(async (chunk, i) => {
+        console.log(`Translating chunk ${i + 1}/${chunks.length}`);
 
-Rules:
-- Keep subtitle numbering unchanged
-- Keep timestamps unchanged
-- Only translate dialogue into Chinese
-- Return valid SRT format
-- Do not add explanations`;
+        const chunkText = entriesToSrt(chunk);
 
-    for (let i = 0; i < chunks.length; i++) {
-      console.log(`Translating chunk ${i + 1}/${chunks.length}`);
+        const completion = await client.chat.completions.create({
+          model: "openai/gpt-4o-mini",
+          temperature: 0.3,
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a professional subtitle translator. Keep numbering and timestamps unchanged. Only translate dialogue. Return valid SRT.",
+            },
+            {
+              role: "user",
+              content: `Translate the following subtitles into Chinese:\n\n${chunkText}`,
+            },
+          ],
+        });
 
-      const chunkSrt = entriesToSrt(chunks[i]);
-
-      const completion = await client.chat.completions.create({
-        model: "openai/gpt-4o-mini",
-        temperature: 0.7,
-        messages: [
-          { role: "system", content: systemPrompt },
-          {
-            role: "user",
-            content: `Translate the following subtitles into Chinese and return valid SRT:
-
-${chunkSrt}
-
-Return only the translated subtitles.`,
-          },
-        ],
-      });
-
-      const translatedChunk =
-        completion.choices[0]?.message?.content?.trim() ?? "";
-      console.log("Chunk translated");
-
-      translatedChunks.push(translatedChunk);
-    }
+        return (completion.choices[0]?.message?.content ?? "").trim();
+      })
+    );
 
     console.log("All chunks translated");
 
