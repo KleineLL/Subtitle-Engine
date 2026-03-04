@@ -5,7 +5,12 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  baseURL: "https://openrouter.ai/api/v1",
+  apiKey: process.env.OPENROUTER_API_KEY,
+  defaultHeaders: {
+    "HTTP-Referer": "https://subtitle-engine.vercel.app",
+    "X-Title": "Subtitle Engine",
+  },
 });
 
 const CHUNK_SIZE = 15;
@@ -123,7 +128,7 @@ Output rules:
       const userContent = `${previousContext}Translate these subtitles:\n${chunkInput}`;
 
       const completion = await client.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: "openai/gpt-4o-mini",
         temperature: 0.7,
         messages: [
           { role: "system", content: systemPrompt },
