@@ -104,9 +104,11 @@ ${filmInfo}Translation Philosophy
 
 You may receive previous subtitle lines as context. Use them only for understanding dialogue flow—do not translate them. Translate only the current chunk.
 
-Return only translated text with the same numbering.
-Each block: number on line 1, then translated text, blank lines between blocks.
-Do not add or modify timecodes.`;
+Output rules:
+- Keep the same line numbers and order as the input.
+- Do not merge or split subtitles: one input subtitle must produce exactly one output subtitle.
+- Each block: number on line 1, then translated text, blank lines between blocks.
+- Do not add or modify timecodes.`;
 
     const translatedTexts: string[] = [];
 
