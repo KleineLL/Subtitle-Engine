@@ -108,6 +108,7 @@ ${textLinesJson}`,
         for (let j = 0; j < chunk.length; j++) {
           const cleaned = (translatedLines[j] ?? chunk[j].text ?? "")
             .replace(/\n/g, " ")
+            .replace(/\s+/g, " ")
             .trim();
           chunk[j].text = cleaned;
         }
