@@ -53,16 +53,14 @@ export async function POST(req: Request) {
     console.log("Total chunks:", chunks.length);
 
     let storyMemory = "";
-    const translatedChunks: string[] = [];
-
     const systemPromptBase = `You are a professional subtitle translator.
 
 Rules:
-- Keep numbering unchanged
-- Keep timestamps unchanged
-- Translate dialogue naturally
+- Translate dialogue naturally into Chinese
 - Adapt slang and tone when appropriate
 - Choose translation strategy dynamically (literal / adaptive / expressive)
+- Return translations as a JSON array where each item corresponds to one subtitle line
+- Do not add numbering, timestamps, or any SRT structure—only the translated text strings
 
 ${filmContextText}
 
@@ -72,7 +70,9 @@ Story so far:
     for (let i = 0; i < chunks.length; i++) {
       console.log(`Translating chunk ${i + 1}/${totalChunks}`);
 
-      const chunkText = entriesToSrt(chunks[i]);
+      const chunk = chunks[i];
+      const textLines = chunk.map((e) => e.text);
+      const textLinesJson = JSON.stringify(textLines, null, 2);
       const systemPrompt = `${systemPromptBase}${storyMemory || "(This is the first chunk.)"}`;
 
       const completion = await client.chat.completions.create({
@@ -82,23 +82,42 @@ Story so far:
           { role: "system", content: systemPrompt },
           {
             role: "user",
-            content: `Translate the following subtitles into Chinese and return valid SRT:
+            content: `Translate the following subtitle lines into Chinese. Return ONLY a JSON array of translated strings, one per line, in the same order.
 
-${chunkText}`,
+Example format:
+["translation of first line", "translation of second line"]
+
+Subtitle lines to translate:
+${textLinesJson}`,
           },
         ],
       });
 
-      const translatedChunk = (completion.choices[0]?.message?.content ?? "").trim();
-      translatedChunks.push(translatedChunk);
+      const rawResponse = (completion.choices[0]?.message?.content ?? "").trim();
+      const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : rawResponse;
+      let translatedLines: string[];
+      try {
+        translatedLines = JSON.parse(jsonStr) as string[];
+      } catch {
+        translatedLines = textLines.map((t) => t);
+      }
 
+      for (let j = 0; j < chunk.length; j++) {
+        const cleaned = (translatedLines[j] ?? chunk[j].text ?? "")
+          .replace(/\n/g, " ")
+          .trim();
+        chunk[j].text = cleaned;
+      }
+
+      const translatedTextForSummary = chunk.map((e) => e.text).join(" ");
       const summaryCompletion = await client.chat.completions.create({
         model: "openai/gpt-4o-mini",
         temperature: 0.2,
         messages: [
           {
             role: "user",
-            content: `Summarize the dialogue in 1–2 sentences so future chunks understand the story context:\n\n${translatedChunk}`,
+            content: `Summarize the dialogue in 1–2 sentences so future chunks understand the story context:\n\n${translatedTextForSummary}`,
           },
         ],
       });
@@ -109,7 +128,7 @@ ${chunkText}`,
 
     console.log("All chunks translated");
 
-    const finalSrt = translatedChunks.join("\n\n");
+    const finalSrt = entriesToSrt(entries);
     console.log("Returning final SRT");
 
     return NextResponse.json({ translated: finalSrt });
