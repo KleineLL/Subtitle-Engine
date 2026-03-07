@@ -55,6 +55,8 @@ export default function Home() {
   const [translatedSubtitles, setTranslatedSubtitles] = useState("");
   const [isTranslating, setIsTranslating] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [totalChunks, setTotalChunks] = useState(0);
+  const [currentChunk, setCurrentChunk] = useState(0);
 
   const [preparedContext, setPreparedContext] = useState<PreparedContext | null>(null);
   const [isPreparing, setIsPreparing] = useState(false);
@@ -166,7 +168,10 @@ export default function Home() {
     if (!srtFile || !srtText || !confirmedContext) return;
 
     setIsTranslating(true);
-    setProgress(5);
+    setProgress(0);
+    setCurrentChunk(0);
+
+    let total = 0;
 
     try {
       const entries = parseSrt(srtText);
@@ -179,7 +184,8 @@ export default function Home() {
         chunks.push(entries.slice(i, i + CHUNK_SIZE));
       }
 
-      const totalChunks = chunks.length;
+      total = chunks.length;
+      setTotalChunks(total);
       const translatedEntries: typeof entries = [];
 
       for (let i = 0; i < chunks.length; i++) {
@@ -212,7 +218,8 @@ export default function Home() {
         const chunkTranslated = data.translated ?? [];
         translatedEntries.push(...chunkTranslated);
 
-        setProgress(5 + Math.round(((i + 1) / totalChunks) * 85));
+        setCurrentChunk(i + 1);
+        setProgress(total > 0 ? Math.round(((i + 1) / total) * 100) : 0);
       }
 
       const finalSrt = entriesToSrt(translatedEntries);
@@ -222,22 +229,10 @@ export default function Home() {
       alert(err instanceof Error ? err.message : "Translation failed.");
     } finally {
       setProgress(100);
+      setCurrentChunk(total);
       setIsTranslating(false);
     }
   };
-
-  useEffect(() => {
-    if (!isTranslating) return;
-
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 90) return prev;
-        return prev + Math.random() * 5;
-      });
-    }, 700);
-
-    return () => clearInterval(interval);
-  }, [isTranslating]);
 
   const handleDownload = () => {
     const blob = new Blob([translatedSubtitles], { type: "text/plain" });
@@ -261,6 +256,8 @@ export default function Home() {
     setSrtText("");
     setTranslatedSubtitles("");
     setProgress(0);
+    setTotalChunks(0);
+    setCurrentChunk(0);
     setPreparedContext(null);
     setConfirmedContext(null);
   };
@@ -673,9 +670,8 @@ export default function Home() {
                         />
                       </div>
                       <p className="mt-2 text-sm text-gray-500">
-                        Translating{" "}
-                        {selectedFilm?.Title || filmTitle || "film"} subtitles…{" "}
-                        {Math.round(progress)}%
+                        Translating subtitles… (chunk {currentChunk} /{" "}
+                        {totalChunks || 1})
                       </p>
                     </>
                   )}
