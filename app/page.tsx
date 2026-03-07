@@ -427,126 +427,147 @@ export default function Home() {
                   Review Film Context
                 </h2>
 
-                <div className="space-y-4">
-                  <div>
+                <div className="space-y-0">
+                  <div className="mb-6">
                     <label className="mb-1 block text-xs font-medium text-stone-600">
                       Setting
                     </label>
+                    <small className="mb-2 block text-xs text-gray-500">
+                      Film metadata inferred from the film title and year.
+                    </small>
                     <textarea
                       value={preparedContext.setting ?? ""}
                       onChange={(e) =>
                         handleUpdateReviewField("setting", e.target.value)
                       }
-                      rows={2}
-                      className="w-full rounded border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400 focus:ring-1 focus:ring-stone-300"
+                      rows={5}
+                      className="w-full resize-y rounded-md border border-stone-200 bg-white p-3 text-sm leading-relaxed outline-none transition-colors focus:border-stone-400 focus:ring-1 focus:ring-stone-300"
                     />
                   </div>
 
-                  <div>
+                  <div className="mb-6">
                     <label className="mb-1 block text-xs font-medium text-stone-600">
                       Themes
                     </label>
+                    <small className="mb-2 block text-xs text-gray-500">
+                      Derived from film context analysis.
+                    </small>
                     <textarea
                       value={preparedContext.themes ?? ""}
                       onChange={(e) =>
                         handleUpdateReviewField("themes", e.target.value)
                       }
-                      rows={2}
-                      className="w-full rounded border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400 focus:ring-1 focus:ring-stone-300"
+                      rows={5}
+                      className="w-full resize-y rounded-md border border-stone-200 bg-white p-3 text-sm leading-relaxed outline-none transition-colors focus:border-stone-400 focus:ring-1 focus:ring-stone-300"
                     />
                   </div>
 
-                  <div>
+                  <div className="mb-6">
                     <label className="mb-1 block text-xs font-medium text-stone-600">
-                      Cultural context
+                      Cultural Context
                     </label>
+                    <small className="mb-2 block text-xs text-gray-500">
+                      Synthesized from general cultural sources such as Wikipedia,
+                      IMDb, and film discussion communities.
+                    </small>
                     <textarea
                       value={preparedContext.cultural_context ?? ""}
                       onChange={(e) =>
                         handleUpdateReviewField("cultural_context", e.target.value)
                       }
-                      rows={3}
-                      className="w-full rounded border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400 focus:ring-1 focus:ring-stone-300"
+                      rows={8}
+                      className="w-full resize-y rounded-md border border-stone-200 bg-white p-3 text-sm leading-relaxed outline-none transition-colors focus:border-stone-400 focus:ring-1 focus:ring-stone-300"
                     />
                   </div>
 
-                  <div>
+                  <div className="mb-6">
                     <label className="mb-1 block text-xs font-medium text-stone-600">
-                      Script summary
+                      Script Tone
                     </label>
-                    <div className="space-y-2">
-                      <div>
-                        <span className="text-xs text-stone-500">Tone: </span>
-                        <textarea
-                          value={
-                            preparedContext.scriptSummary?.tone ?? ""
-                          }
-                          onChange={(e) =>
-                            handleUpdateReviewField("scriptSummary", {
-                              ...(preparedContext.scriptSummary ?? {
-                                tone: "",
-                                dialogue_style: "",
-                                narrative_summary: "",
-                              }),
-                              tone: e.target.value,
-                            })
-                          }
-                          rows={1}
-                          className="mt-1 w-full rounded border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400 focus:ring-1 focus:ring-stone-300"
-                        />
-                      </div>
-                      <div>
-                        <span className="text-xs text-stone-500">
-                          Dialogue style:{" "}
-                        </span>
-                        <textarea
-                          value={
-                            preparedContext.scriptSummary?.dialogue_style ?? ""
-                          }
-                          onChange={(e) =>
-                            handleUpdateReviewField("scriptSummary", {
-                              ...(preparedContext.scriptSummary ?? {
-                                tone: "",
-                                dialogue_style: "",
-                                narrative_summary: "",
-                              }),
-                              dialogue_style: e.target.value,
-                            })
-                          }
-                          rows={1}
-                          className="mt-1 w-full rounded border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400 focus:ring-1 focus:ring-stone-300"
-                        />
-                      </div>
-                      <div>
-                        <span className="text-xs text-stone-500">
-                          Narrative summary:{" "}
-                        </span>
-                        <textarea
-                          value={
-                            preparedContext.scriptSummary?.narrative_summary ??
-                            ""
-                          }
-                          onChange={(e) =>
-                            handleUpdateReviewField("scriptSummary", {
-                              ...(preparedContext.scriptSummary ?? {
-                                tone: "",
-                                dialogue_style: "",
-                                narrative_summary: "",
-                              }),
-                              narrative_summary: e.target.value,
-                            })
-                          }
-                          rows={2}
-                          className="mt-1 w-full rounded border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400 focus:ring-1 focus:ring-stone-300"
-                        />
-                      </div>
-                    </div>
+                    <small className="mb-2 block text-xs text-gray-500">
+                      Inferred from sampled subtitle dialogue.
+                    </small>
+                    <textarea
+                      value={
+                        preparedContext.scriptSummary?.tone ?? ""
+                      }
+                      onChange={(e) =>
+                        handleUpdateReviewField("scriptSummary", {
+                          ...(preparedContext.scriptSummary ?? {
+                            tone: "",
+                            dialogue_style: "",
+                            narrative_summary: "",
+                          }),
+                          tone: e.target.value,
+                        })
+                      }
+                      rows={5}
+                      className="w-full resize-y rounded-md border border-stone-200 bg-white p-3 text-sm leading-relaxed outline-none transition-colors focus:border-stone-400 focus:ring-1 focus:ring-stone-300"
+                    />
                   </div>
 
-                  <div>
-                    <label className="mb-2 block text-xs font-medium text-stone-600">
+                  <div className="mb-6">
+                    <label className="mb-1 block text-xs font-medium text-stone-600">
+                      Dialogue Style
+                    </label>
+                    <small className="mb-2 block text-xs text-gray-500">
+                      Based on linguistic patterns found in the subtitle text.
+                    </small>
+                    <textarea
+                      value={
+                        preparedContext.scriptSummary?.dialogue_style ?? ""
+                      }
+                      onChange={(e) =>
+                        handleUpdateReviewField("scriptSummary", {
+                          ...(preparedContext.scriptSummary ?? {
+                            tone: "",
+                            dialogue_style: "",
+                            narrative_summary: "",
+                          }),
+                          dialogue_style: e.target.value,
+                        })
+                      }
+                      rows={5}
+                      className="w-full resize-y rounded-md border border-stone-200 bg-white p-3 text-sm leading-relaxed outline-none transition-colors focus:border-stone-400 focus:ring-1 focus:ring-stone-300"
+                    />
+                  </div>
+
+                  <div className="mb-6">
+                    <label className="mb-1 block text-xs font-medium text-stone-600">
+                      Narrative Summary
+                    </label>
+                    <small className="mb-2 block text-xs text-gray-500">
+                      High-level narrative understanding generated from subtitle
+                      sampling.
+                    </small>
+                    <textarea
+                      value={
+                        preparedContext.scriptSummary?.narrative_summary ??
+                        ""
+                      }
+                      onChange={(e) =>
+                        handleUpdateReviewField("scriptSummary", {
+                          ...(preparedContext.scriptSummary ?? {
+                            tone: "",
+                            dialogue_style: "",
+                            narrative_summary: "",
+                          }),
+                          narrative_summary: e.target.value,
+                        })
+                      }
+                      rows={8}
+                      className="w-full resize-y rounded-md border border-stone-200 bg-white p-3 text-sm leading-relaxed outline-none transition-colors focus:border-stone-400 focus:ring-1 focus:ring-stone-300"
+                    />
+                  </div>
+
+                  <div className="mb-6">
+                    <label className="mb-1 block text-xs font-medium text-stone-600">
                       Characters
                     </label>
+                    <small className="mb-2 block text-xs text-gray-500">
+                      Major characters identified from film context; gender inferred
+                      when possible.
+                    </small>
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-stone-200 text-left text-xs text-stone-500">
