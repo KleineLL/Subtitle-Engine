@@ -6,6 +6,7 @@ import { openrouter } from "@/lib/openrouter";
 const CHUNK_SIZE = 40;
 const CONTEXT_WINDOW = 6;
 const SCRIPT_SAMPLE_MAX_CHARS = 12000;
+const ENGLISH_LEAKAGE_REGEX = /[A-Za-z]{3,}/;
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -18,9 +19,14 @@ export async function POST(req: Request) {
     const { subtitles, filmContext } = body;
     console.log("Request received");
 
+    const filmContextObj =
+      filmContext && typeof filmContext === "object" ? filmContext : {};
+    const filmContextEntries = Object.entries(filmContextObj).filter(
+      ([k]) => k !== "characters"
+    );
     const filmContextDisplay =
-      filmContext && typeof filmContext === "object"
-        ? Object.entries(filmContext)
+      filmContextEntries.length > 0
+        ? filmContextEntries
             .map(([k, v]) =>
               Array.isArray(v) ? `${k}: ${(v as unknown[]).join(", ")}` : `${k}: ${String(v)}`
             )
@@ -28,6 +34,20 @@ export async function POST(req: Request) {
         : filmContext && typeof filmContext === "string"
           ? filmContext
           : "No film context provided.";
+
+    const characters = (filmContextObj as Record<string, unknown>).characters;
+    const charactersDisplay =
+      Array.isArray(characters) && characters.length > 0
+        ? characters
+            .map((c: unknown) => {
+              if (c && typeof c === "object" && "name" in c && "gender" in c) {
+                return `${(c as { name: string; gender: string }).name} (${(c as { name: string; gender: string }).gender})`;
+              }
+              return null;
+            })
+            .filter(Boolean)
+            .join(", ")
+        : "No character information available.";
 
     if (!subtitles) {
       return NextResponse.json(
@@ -52,6 +72,8 @@ export async function POST(req: Request) {
 
     const totalChunks = chunks.length;
     console.log("Total chunks:", totalChunks);
+
+    const originalTexts = entries.map((e) => e.text);
 
     // STEP 3 — Subtitle script understanding
     const fullScriptText = entries.map((e) => e.text).join("\n");
@@ -101,6 +123,7 @@ Return JSON only:
 You have access to:
 - Film context (metadata, setting, themes, cultural context, language style)
 - Script understanding (tone, dialogue style, narrative summary)
+- Character information (for gender-aware dialogue)
 
 Use them to interpret dialogue appropriately.
 
@@ -112,8 +135,26 @@ Translation rules:
 - Keep translations concise and subtitle-friendly
 - Maintain speaker's tone, humor, and personality
 
+All dialogue must be translated fully into Chinese.
+English words must not appear in the output unless they are:
+- song titles
+- band names
+- film titles
+- proper nouns such as character names.
+Do not leave English phrases untranslated.
+
+When translating slang such as "mate", consider the gender of the addressed character if known.
+Prefer gender-neutral Chinese expressions such as:
+伙计
+哥们
+老兄
+Avoid gendered terms like "兄弟" when addressing a female character.
+
 Film context:
 ${filmContextDisplay}
+
+Characters (name, gender):
+${charactersDisplay}
 
 Script understanding:
 ${scriptSummary}
@@ -127,7 +168,7 @@ Rules:
 - Do NOT change or generate timestamps
 - Return only the JSON array
 - Do not skip any entries
-- Do not include English in output
+- Do not include English in output (except proper nouns, titles)
 
 You may receive previous dialogue context for understanding only. Do NOT translate the context.`;
 
@@ -228,6 +269,45 @@ ${jsonInput}`;
         }
       })
     );
+
+    // English leakage check: retry entries that still contain English words (3+ letters)
+    const leakedIndices: number[] = [];
+    for (let idx = 0; idx < entries.length; idx++) {
+      if (ENGLISH_LEAKAGE_REGEX.test(entries[idx].text)) {
+        leakedIndices.push(idx);
+      }
+    }
+    if (leakedIndices.length > 0) {
+      console.warn(`English leakage detected in ${leakedIndices.length} entries, retrying...`);
+      for (const leakedIndex of leakedIndices) {
+        const contextEntries = entries.slice(
+          Math.max(0, leakedIndex - CONTEXT_WINDOW),
+          leakedIndex
+        );
+        const contextText = contextEntries.map((e) => e.text).join("\n");
+        const originalText = originalTexts[leakedIndex];
+        const jsonInput = JSON.stringify([{ id: 0, text: originalText }], null, 2);
+
+        const userContent = contextText
+          ? `Previous dialogue context (for understanding only—do not translate):
+${contextText}
+
+Translate the following subtitles (JSON array). Ensure full Chinese translation:
+${jsonInput}`
+          : `Translate the following subtitles (JSON array). Ensure full Chinese translation:
+${jsonInput}`;
+
+        const retryMap = await translateChunk(
+          [entries[leakedIndex]],
+          jsonInput,
+          userContent
+        );
+        const retryText = retryMap.get(0);
+        if (retryText) {
+          entries[leakedIndex].text = normalizeText(retryText);
+        }
+      }
+    }
 
     console.log("All chunks translated");
 
