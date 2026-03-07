@@ -27,25 +27,22 @@ Keep STEP 2 under 150 words total.
 STEP 3 — Character extraction:
 Identify major characters and infer their gender when possible from your knowledge of the film.
 
-Return a single JSON object merging all steps. Example structure:
+Return a single JSON object merging all steps. Example structure (use placeholder format—generate real values from the input film):
 {
-  "title": "Human Traffic",
-  "year": "1999",
-  "director": "Justin Kerrigan",
-  "setting": "1990s Cardiff rave culture",
-  "themes": "youth nightlife, drug culture, friendship",
-  "cultural_context": "UK club scene, ecstasy culture, weekend lifestyle",
-  "language_style": "British slang, casual dialogue, rave terminology",
-  "subculture_context": "UK rave and club culture of the late 90s",
-  "slang_style": "Casual, drug-related slang, youth vernacular",
-  "historical_background": "Post-Thatcher Britain, rise of dance music",
-  "audience_perception": "Cult film about youth culture and hedonism",
+  "title": "...",
+  "year": "...",
+  "director": "...",
+  "setting": "...",
+  "themes": "...",
+  "cultural_context": "...",
+  "language_style": "...",
+  "subculture_context": "...",
+  "slang_style": "...",
+  "historical_background": "...",
+  "audience_perception": "...",
   "characters": [
-    { "name": "Jip", "gender": "male" },
-    { "name": "Nina", "gender": "female" },
-    { "name": "Koop", "gender": "male" },
-    { "name": "Moff", "gender": "male" },
-    { "name": "Trixi", "gender": "female" }
+    { "name": "...", "gender": "male" },
+    { "name": "...", "gender": "female" }
   ]
 }`;
 
