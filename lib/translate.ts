@@ -1,7 +1,49 @@
 import { normalizeText } from "@/lib/normalize";
 import { openrouter } from "@/lib/openrouter";
 
-const ENGLISH_LEAKAGE_REGEX = /[A-Za-z]{3,}/;
+const ENGLISH_WORD_REGEX = /\b[a-zA-Z]{3,}\b/g;
+
+/**
+ * Returns true if text contains English dialogue words that should have been
+ * translated. Proper nouns (capitalized standalone, quoted, or in brackets) are
+ * allowed.
+ */
+function hasEnglishDialogueLeakage(text: string): boolean {
+  const matches = text.matchAll(ENGLISH_WORD_REGEX);
+  for (const match of matches) {
+    const word = match[0];
+    const start = match.index!;
+    const end = start + word.length;
+    const charBefore = text[start - 1] ?? " ";
+    const charAfter = text[end] ?? " ";
+
+    // Skip if inside quotes: "word" or 'word'
+    if (
+      (charBefore === '"' && charAfter === '"') ||
+      (charBefore === "'" && charAfter === "'")
+    ) {
+      continue;
+    }
+    // Skip if inside brackets: [word] or [word ...]
+    if (charBefore === "[") {
+      const afterWord = text.slice(end);
+      if (afterWord.includes("]")) continue;
+    }
+    if (charAfter === "]") {
+      const beforeWord = text.slice(0, start);
+      if (beforeWord.includes("[")) continue;
+    }
+    // Skip if capitalized and standalone (likely proper noun: Oasis, Blur)
+    if (word[0] === word[0].toUpperCase() && word.slice(1) === word.slice(1).toLowerCase()) {
+      const beforeIsBoundary = /[\s\u4e00-\u9fff，。！？；：、""\u201C\u201D\p{P}]/u.test(charBefore) || start === 0;
+      const afterIsBoundary = /[\s\u4e00-\u9fff，。！？；：、""\u201C\u201D\p{P}]/u.test(charAfter) || end === text.length;
+      if (beforeIsBoundary && afterIsBoundary) continue;
+    }
+
+    return true; // Found English dialogue that should have been translated
+  }
+  return false;
+}
 
 export function buildContextFromObj(contextObj: Record<string, unknown>) {
   const excludeKeys = new Set(["characters", "scriptSummary"]);
@@ -191,8 +233,12 @@ export async function translateChunkWithRetry(
 
   const originalTexts = chunk.map((e) => e.text);
 
+  const stricterInstruction = `Translate the dialogue fully into Chinese.
+Do not leave English words in the dialogue.
+Exception: preserve song titles, band names, artist names, and film titles in English (e.g. Oasis, Blur, Smells Like Teen Spirit).`;
+
   for (let i = 0; i < result.length; i++) {
-    if (ENGLISH_LEAKAGE_REGEX.test(result[i].text)) {
+    if (hasEnglishDialogueLeakage(result[i].text)) {
       const prevInChunk = result
         .slice(0, i)
         .map((e) => e.text)
@@ -205,9 +251,13 @@ export async function translateChunkWithRetry(
         ? `Previous dialogue context (for understanding only—do not translate):
 ${prevText}
 
-Translate the following subtitles (JSON array). Ensure full Chinese translation:
+${stricterInstruction}
+
+Translate the following subtitles (JSON array):
 ${JSON.stringify([{ id: 0, text: originalTexts[i] }], null, 2)}`
-        : `Translate the following subtitles (JSON array). Ensure full Chinese translation:
+        : `${stricterInstruction}
+
+Translate the following subtitles (JSON array):
 ${JSON.stringify([{ id: 0, text: originalTexts[i] }], null, 2)}`;
 
       const retryCompletion = await openrouter.chat.completions.create({
