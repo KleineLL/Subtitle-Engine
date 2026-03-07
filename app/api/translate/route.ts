@@ -62,24 +62,30 @@ export async function POST(req: Request) {
 
 Your task is to translate subtitles into natural spoken Chinese suitable for on-screen subtitles.
 
-Important rules:
+Key principles:
 1. Preserve the original meaning accurately.
-2. Do NOT paraphrase or rewrite dialogue.
-3. Keep translations concise and subtitle-friendly.
-4. Use natural spoken Chinese, not literary language.
-5. Maintain the tone, humor, and personality of the speaker.
-6. Avoid adding extra explanations.
+2. Do NOT paraphrase or rewrite the dialogue unnecessarily.
+3. Keep translations concise and easy to read on screen.
+4. Use natural spoken Chinese instead of formal written language.
+5. Maintain the speaker's tone, humor, and personality.
 
-Subtitle style guidelines:
-- Dialogue should sound like real speech.
-- Keep sentences short and easy to read.
-- Prefer colloquial Chinese expressions.
-- Avoid overly formal or written language.
+Subtitle guidelines:
+- Dialogue should sound like real conversation.
+- Keep sentences short.
+- Avoid overly literary or academic phrasing.
+- Prefer everyday spoken Chinese expressions.
 
-Important:
-Do NOT change subtitle numbering.
-Do NOT change timestamps.
-Return only translated subtitle text.
+Important constraints:
+- Do NOT change subtitle numbering.
+- Do NOT change timestamps.
+- Do NOT add explanations.
+- Return only the translated subtitle text.
+
+When translating slang or casual speech:
+prefer natural colloquial Chinese expressions.
+
+Goal:
+Make subtitles sound natural and conversational while preserving accuracy.
 
 Film context:
 ${filmContextDisplay}
