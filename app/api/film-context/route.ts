@@ -2,29 +2,41 @@ import { NextResponse } from "next/server";
 import { openrouter } from "@/lib/openrouter";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
-const SYSTEM_PROMPT = `You are a film analyst.
+const SYSTEM_PROMPT = `You are a film analyst preparing context for subtitle translation.
 
-Given a film title and year, generate a concise context summary for subtitle translation.
+Given a film title and year, produce two structured outputs:
 
-Include:
+STEP 1 — Film metadata understanding:
+- title, year, director
 - setting
 - themes
-- tone
-- main characters
 - cultural context
 - language style
 
-Keep it under 150 words.`;
+STEP 2 — Cultural context enrichment:
+Based on your knowledge of this film (from Wikipedia, IMDb, Letterboxd, critical reception, audience discussions), synthesize a short cultural context. Do NOT scrape pages—use your existing knowledge to generate:
+- subculture_context
+- slang_style
+- historical_background
+- audience_perception
 
-const OUTPUT_SCHEMA = `Return structured JSON only. Example:
+Keep STEP 2 under 150 words total.
+
+Return a single JSON object merging both steps. Example structure:
 {
+  "title": "Human Traffic",
+  "year": "1999",
+  "director": "Justin Kerrigan",
   "setting": "1990s Cardiff rave culture",
   "themes": "youth nightlife, drug culture, friendship",
-  "tone": "comedic, chaotic, energetic",
-  "language": "British slang, casual dialogue",
-  "characters": ["Jip", "Nina", "Koop", "Moff"]
+  "cultural_context": "UK club scene, ecstasy culture, weekend lifestyle",
+  "language_style": "British slang, casual dialogue, rave terminology",
+  "subculture_context": "UK rave and club culture of the late 90s",
+  "slang_style": "Casual, drug-related slang, youth vernacular",
+  "historical_background": "Post-Thatcher Britain, rise of dance music",
+  "audience_perception": "Cult film about youth culture and hedonism"
 }`;
 
 export async function POST(req: Request) {
@@ -48,7 +60,7 @@ export async function POST(req: Request) {
       model: "openai/gpt-4o-mini",
       temperature: 0.3,
       messages: [
-        { role: "system", content: `${SYSTEM_PROMPT}\n\n${OUTPUT_SCHEMA}` },
+        { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userContent },
       ],
       response_format: { type: "json_object" },

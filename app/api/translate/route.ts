@@ -1,19 +1,14 @@
 import { NextResponse } from "next/server";
 import { parseSrt, entriesToSrt } from "@/lib/srt";
+import { normalizeText } from "@/lib/normalize";
 import { openrouter } from "@/lib/openrouter";
 
 const CHUNK_SIZE = 40;
 const CONTEXT_WINDOW = 6;
+const SCRIPT_SAMPLE_MAX_CHARS = 12000;
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
-
-function cleanChineseSpacing(text: string): string {
-  return text
-    .replace(/\s+/g, " ")
-    .replace(/([，。！？；：、""\u201C\u201D])\s+/g, "$1")
-    .trim();
-}
 
 export async function POST(req: Request) {
   try {
@@ -56,59 +51,89 @@ export async function POST(req: Request) {
     }
 
     const totalChunks = chunks.length;
-    console.log("Total chunks:", chunks.length);
+    console.log("Total chunks:", totalChunks);
 
-    const systemPrompt = `You are a professional subtitle translator.
+    // STEP 3 — Subtitle script understanding
+    const fullScriptText = entries.map((e) => e.text).join("\n");
+    const scriptSample =
+      fullScriptText.length > SCRIPT_SAMPLE_MAX_CHARS
+        ? fullScriptText.slice(0, SCRIPT_SAMPLE_MAX_CHARS - 100) + "\n[...]"
+        : fullScriptText;
 
-Your task is to translate subtitles into natural spoken Chinese suitable for on-screen subtitles.
+    console.log("Generating script understanding...");
+    const scriptUnderstandingPrompt = `Analyze this subtitle script sample and summarize for translation guidance.
 
-Key principles:
-1. Preserve the original meaning accurately.
-2. Do NOT paraphrase or rewrite the dialogue unnecessarily.
-3. Keep translations concise and easy to read on screen.
-4. Use natural spoken Chinese instead of formal written language.
-5. Maintain the speaker's tone, humor, and personality.
+Subtitle dialogue (sample):
+${scriptSample}
 
-Subtitle guidelines:
-- Dialogue should sound like real conversation.
-- Keep sentences short.
-- Avoid overly literary or academic phrasing.
-- Prefer everyday spoken Chinese expressions.
+Return JSON only:
+{
+  "tone": "description of overall tone",
+  "dialogue_style": "description of how characters speak",
+  "narrative_summary": "brief summary of narrative situation, character dynamics, slang density, cultural references"
+}`;
 
-Important constraints:
-- Do NOT change subtitle numbering.
-- Do NOT change timestamps.
-- Do NOT add explanations.
-- Return only the translated subtitle text.
+    let scriptSummary = "No script summary available.";
+    try {
+      const scriptCompletion = await openrouter.chat.completions.create({
+        model: "openai/gpt-4o-mini",
+        temperature: 0.2,
+        messages: [
+          { role: "system", content: "Return structured JSON only. No markdown." },
+          { role: "user", content: scriptUnderstandingPrompt },
+        ],
+        response_format: { type: "json_object" },
+      });
+      const scriptRaw = (scriptCompletion.choices[0]?.message?.content ?? "").trim();
+      if (scriptRaw) {
+        const scriptParsed = JSON.parse(scriptRaw) as Record<string, unknown>;
+        scriptSummary = Object.entries(scriptParsed)
+          .map(([k, v]) => `${k}: ${String(v)}`)
+          .join("\n");
+      }
+    } catch (e) {
+      console.warn("Script understanding failed, continuing without:", e);
+    }
 
-When translating slang or casual speech:
-prefer natural colloquial Chinese expressions.
+    // STEP 4 — Context-aware translation
+    const systemPrompt = `You are translating film subtitles.
 
-Goal:
-Make subtitles sound natural and conversational while preserving accuracy.
+You have access to:
+- Film context (metadata, setting, themes, cultural context, language style)
+- Script understanding (tone, dialogue style, narrative summary)
+
+Use them to interpret dialogue appropriately.
+
+Translation rules:
+- Preserve meaning
+- Use natural spoken Chinese
+- Adapt slang based on cultural context
+- Do not rewrite dialogue unnecessarily
+- Keep translations concise and subtitle-friendly
+- Maintain speaker's tone, humor, and personality
 
 Film context:
 ${filmContextDisplay}
 
-Use this context to understand cultural references, slang, character relationships, tone and humor.
+Script understanding:
+${scriptSummary}
 
-You will receive a JSON array of subtitle entries.
-Translate ONLY the text field into Chinese.
-Return a JSON array with the same ids.
-- do not skip any entries
-- do not include English
-- keep the same ids
-- return only Chinese translations
+Input format: JSON array with id and text. Output format: same structure with Chinese translations only.
+Example input: [{"id":0,"text":"Hello there."},{"id":1,"text":"How are you?"}]
+Example output: [{"id":0,"text":"你好。"},{"id":1,"text":"你好吗？"}]
 
-You may receive previous dialogue context for understanding only.
-Do NOT translate the context—translate ONLY the JSON array entries.`;
+Rules:
+- Do NOT change ids
+- Do NOT change or generate timestamps
+- Return only the JSON array
+- Do not skip any entries
+- Do not include English in output
+
+You may receive previous dialogue context for understanding only. Do NOT translate the context.`;
 
     type JsonEntry = { id: number; text: string };
 
-    const parseJsonOutput = (
-      rawResponse: string,
-      chunk: (typeof entries)[0][]
-    ): JsonEntry[] | null => {
+    const parseJsonOutput = (rawResponse: string): JsonEntry[] | null => {
       const trimmed = rawResponse.trim();
       const jsonMatch = trimmed.match(/\[[\s\S]*\]/);
       if (!jsonMatch) return null;
@@ -138,7 +163,7 @@ Do NOT translate the context—translate ONLY the JSON array entries.`;
       chunk: (typeof entries)[0][],
       jsonInput: string,
       userContent: string
-    ): Promise<JsonEntry[] | null> => {
+    ): Promise<Map<number, string>> => {
       const completion = await openrouter.chat.completions.create({
         model: "openai/gpt-4o-mini",
         temperature: 0.3,
@@ -148,7 +173,12 @@ Do NOT translate the context—translate ONLY the JSON array entries.`;
         ],
       });
       const rawResponse = (completion.choices[0]?.message?.content ?? "").trim();
-      return parseJsonOutput(rawResponse, chunk);
+      const parsed = parseJsonOutput(rawResponse);
+      if (!parsed) return new Map();
+
+      const map = new Map<number, string>();
+      parsed.forEach((item) => map.set(item.id, item.text));
+      return map;
     };
 
     await Promise.all(
@@ -173,38 +203,24 @@ Do NOT translate the context—translate ONLY the JSON array entries.`;
 ${contextText}
 
 Translate the following subtitles (JSON array):
-${jsonInput}
-
-Example output:
-[
-  { "id": 0, "text": "因为我得付房租。" },
-  { "id": 1, "text": "但要我说的话……" },
-  { "id": 2, "text": "而且他是来真的，大生意。" }
-]`
+${jsonInput}`
           : `Translate the following subtitles (JSON array):
-${jsonInput}
-
-Example output:
-[
-  { "id": 0, "text": "因为我得付房租。" },
-  { "id": 1, "text": "但要我说的话……" },
-  { "id": 2, "text": "而且他是来真的，大生意。" }
-]`;
+${jsonInput}`;
 
         console.log(`Translating chunk ${i + 1}/${totalChunks}`);
 
-        let result = await translateChunk(chunk, jsonInput, userContent);
+        let translationMap = await translateChunk(chunk, jsonInput, userContent);
 
-        if (!result) {
+        if (translationMap.size === 0) {
           console.warn("JSON parse failed. Retrying translation...");
-          result = await translateChunk(chunk, jsonInput, userContent);
+          translationMap = await translateChunk(chunk, jsonInput, userContent);
         }
 
-        if (result) {
-          result.forEach((item) => {
-            const targetIndex = chunkStartIndex + item.id;
+        if (translationMap.size > 0) {
+          translationMap.forEach((text, id) => {
+            const targetIndex = chunkStartIndex + id;
             if (targetIndex >= 0 && targetIndex < entries.length) {
-              entries[targetIndex].text = cleanChineseSpacing(item.text);
+              entries[targetIndex].text = normalizeText(text);
             }
           });
         } else {
