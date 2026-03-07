@@ -12,11 +12,14 @@ type FilmDetail = {
   Actors?: string;
 };
 
-const TRANSLATION_PHILOSOPHIES = [
-  { value: "adaptive", label: "Context-aware adaptive (recommended)" },
-  { value: "fidelity", label: "Strict semantic fidelity" },
-  { value: "expressive", label: "Expressive performance mode" },
-] as const;
+type ReviewContext = {
+  setting?: string;
+  themes?: string;
+  cultural_context?: string;
+  scriptSummary?: string;
+  characters?: { name: string; gender: string }[];
+  [key: string]: unknown;
+};
 
 export default function Home() {
   const [phase, setPhase] = useState<"phase1" | "phase2">("phase1");
@@ -27,13 +30,13 @@ export default function Home() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [selectedFilm, setSelectedFilm] = useState<FilmDetail | null>(null);
-  const [translationPhilosophy, setTranslationPhilosophy] = useState<
-    (typeof TRANSLATION_PHILOSOPHIES)[number]["value"]
-  >(TRANSLATION_PHILOSOPHIES[0].value);
   const [srtFile, setSrtFile] = useState<File | null>(null);
   const [translatedSubtitles, setTranslatedSubtitles] = useState("");
   const [isTranslating, setIsTranslating] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [preparedContext, setPreparedContext] = useState<ReviewContext | null>(null);
+  const [confirmedContext, setConfirmedContext] = useState<ReviewContext | null>(null);
+  const [isPreparing, setIsPreparing] = useState(false);
 
   const handleSearch = async () => {
     if (!filmTitle.trim() && !imdbId.trim()) return;
@@ -72,8 +75,47 @@ export default function Home() {
     setPhase("phase2");
   };
 
+  const handlePrepareContext = async () => {
+    if (!srtFile || !selectedFilm) return;
+
+    setIsPreparing(true);
+    setPreparedContext(null);
+
+    try {
+      const text = await srtFile.text();
+      const res = await fetch("/api/prepare-context", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: selectedFilm.Title,
+          year: selectedFilm.Year,
+          subtitles: text,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Failed to prepare context");
+      }
+
+      const data = (await res.json()) as ReviewContext;
+      setPreparedContext(data);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Failed to prepare context.");
+    } finally {
+      setIsPreparing(false);
+    }
+  };
+
+  const handleConfirmContext = () => {
+    if (preparedContext) {
+      setConfirmedContext({ ...preparedContext });
+    }
+  };
+
   const handleTranslate = async () => {
-    if (!srtFile) return;
+    if (!srtFile || !confirmedContext) return;
 
     setIsTranslating(true);
     setProgress(5);
@@ -81,31 +123,12 @@ export default function Home() {
     try {
       const text = await srtFile.text();
 
-      let filmContext: Record<string, unknown> | undefined;
-      if (selectedFilm) {
-        try {
-          const fcRes = await fetch("/api/film-context", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              title: selectedFilm.Title,
-              year: selectedFilm.Year,
-            }),
-          });
-          if (fcRes.ok) {
-            filmContext = (await fcRes.json()) as Record<string, unknown>;
-          }
-        } catch {
-          // Continue without film context
-        }
-      }
-
       const res = await fetch("/api/translate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           subtitles: text,
-          filmContext: filmContext,
+          filmContext: confirmedContext,
         }),
       });
 
@@ -159,6 +182,23 @@ export default function Home() {
     setSrtFile(null);
     setTranslatedSubtitles("");
     setProgress(0);
+    setPreparedContext(null);
+    setConfirmedContext(null);
+  };
+
+  const updatePreparedField = (
+    field: string,
+    value: string | { name: string; gender: string }[]
+  ) => {
+    if (!preparedContext) return;
+    setPreparedContext((prev) => (prev ? { ...prev, [field]: value } : null));
+  };
+
+  const updateCharacterGender = (index: number, gender: string) => {
+    if (!preparedContext?.characters) return;
+    const next = [...preparedContext.characters];
+    next[index] = { ...next[index], gender };
+    setPreparedContext((prev) => (prev ? { ...prev, characters: next } : null));
   };
 
   return (
@@ -290,13 +330,7 @@ export default function Home() {
               </p>
             )}
 
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleTranslate();
-              }}
-              className="space-y-4"
-            >
+            <div className="space-y-4">
               <div>
                 <label className="mb-1 block text-xs font-medium text-stone-600">
                   Subtitle file (.srt)
@@ -304,46 +338,172 @@ export default function Home() {
                 <input
                   type="file"
                   accept=".srt"
-                  onChange={(e) => setSrtFile(e.target.files?.[0] ?? null)}
+                  onChange={(e) => {
+                    setSrtFile(e.target.files?.[0] ?? null);
+                    setPreparedContext(null);
+                    setConfirmedContext(null);
+                  }}
                   className="w-full rounded border border-stone-200 bg-white px-3 py-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-stone-100 file:px-3 file:py-1 file:text-xs file:font-medium file:text-stone-700"
                 />
               </div>
 
-              <div>
-                <label htmlFor="philosophy" className="mb-1 block text-xs font-medium text-stone-600">
-                  Translation Philosophy (optional advanced)
-                </label>
-                <select
-                  id="philosophy"
-                  value={translationPhilosophy}
-                  onChange={(e) =>
-                    setTranslationPhilosophy(
-                      e.target.value as (typeof TRANSLATION_PHILOSOPHIES)[number]["value"]
-                    )
-                  }
-                  className="w-full rounded border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400 focus:ring-1 focus:ring-stone-300"
-                >
-                  {TRANSLATION_PHILOSOPHIES.map((philosophy) => (
-                    <option key={philosophy.value} value={philosophy.value}>
-                      {philosophy.label}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-2 text-sm text-stone-500">
-                  Philosophy shapes translation choices dynamically instead of forcing a uniform
-                  stylistic filter.
-                </p>
-              </div>
-
               <button
-                type="submit"
-                disabled={!srtFile || isTranslating}
-                className="w-full rounded bg-stone-900 py-2.5 text-sm font-medium text-white transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-400"
+                type="button"
+                onClick={handlePrepareContext}
+                disabled={!srtFile || !selectedFilm || isPreparing}
+                className="w-full rounded border border-stone-300 bg-white py-2.5 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isTranslating ? "Translating…" : "Translate"}
+                {isPreparing ? "Generating context…" : "Generate Film Context"}
               </button>
 
-              {(isTranslating || progress > 0) && (
+              {preparedContext && (
+                <div className="rounded-lg border border-stone-200 bg-stone-50 p-4">
+                  <h3 className="mb-3 text-sm font-medium text-stone-700">
+                    Review Film Context
+                  </h3>
+                  <p className="mb-4 text-xs text-stone-500">
+                    Edit the context below, then confirm to use it for translation.
+                  </p>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-stone-600">
+                        Setting
+                      </label>
+                      <textarea
+                        value={preparedContext.setting ?? ""}
+                        onChange={(e) => updatePreparedField("setting", e.target.value)}
+                        rows={2}
+                        className="w-full rounded border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-stone-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-stone-600">
+                        Themes
+                      </label>
+                      <textarea
+                        value={preparedContext.themes ?? ""}
+                        onChange={(e) => updatePreparedField("themes", e.target.value)}
+                        rows={2}
+                        className="w-full rounded border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-stone-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-stone-600">
+                        Cultural context
+                      </label>
+                      <textarea
+                        value={
+                          preparedContext.cultural_context ??
+                          ([
+                            preparedContext.subculture_context,
+                            preparedContext.slang_style,
+                            preparedContext.historical_background,
+                            preparedContext.audience_perception,
+                          ]
+                            .filter(Boolean)
+                            .join("\n\n") || "")
+                        }
+                        onChange={(e) =>
+                          updatePreparedField("cultural_context", e.target.value)
+                        }
+                        rows={4}
+                        className="w-full rounded border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-stone-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-stone-600">
+                        Script summary
+                      </label>
+                      <textarea
+                        value={preparedContext.scriptSummary ?? ""}
+                        onChange={(e) =>
+                          updatePreparedField("scriptSummary", e.target.value)
+                        }
+                        rows={4}
+                        className="w-full rounded border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-stone-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-xs font-medium text-stone-600">
+                        Characters
+                      </label>
+                      <table className="w-full border-collapse rounded border border-stone-200 bg-white text-sm">
+                        <thead>
+                          <tr className="border-b border-stone-200 bg-stone-100">
+                            <th className="px-3 py-2 text-left text-xs font-medium text-stone-600">
+                              Name
+                            </th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-stone-600">
+                              Gender
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(preparedContext.characters ?? []).map((char, idx) => (
+                            <tr
+                              key={idx}
+                              className="border-b border-stone-100 last:border-0"
+                            >
+                              <td className="px-3 py-2">{char.name}</td>
+                              <td className="px-3 py-2">
+                                <select
+                                  value={char.gender}
+                                  onChange={(e) =>
+                                    updateCharacterGender(idx, e.target.value)
+                                  }
+                                  className="rounded border border-stone-200 bg-white px-2 py-1 text-xs outline-none focus:border-stone-400"
+                                >
+                                  <option value="male">male</option>
+                                  <option value="female">female</option>
+                                  <option value="unknown">unknown</option>
+                                </select>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {(!preparedContext.characters ||
+                        preparedContext.characters.length === 0) && (
+                        <p className="mt-2 text-xs text-stone-400">
+                          No characters identified.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleConfirmContext}
+                    className="mt-4 w-full rounded bg-stone-900 py-2.5 text-sm font-medium text-white transition-colors hover:bg-stone-800"
+                  >
+                    Confirm Context
+                  </button>
+                </div>
+              )}
+
+              {confirmedContext && (
+                <p className="text-xs text-emerald-600">
+                  ✓ Context confirmed. You can now translate.
+                </p>
+              )}
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleTranslate();
+                }}
+              >
+                <button
+                  type="submit"
+                  disabled={!srtFile || !confirmedContext || isTranslating}
+                  className="w-full rounded bg-stone-900 py-2.5 text-sm font-medium text-white transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-400"
+                >
+                  {isTranslating ? "Translating…" : "Translate"}
+                </button>
+              </form>
+
+            {(isTranslating || progress > 0) && (
                 <>
                   <div className="mt-4 w-full rounded-full bg-gray-200 h-3">
                     <div
@@ -357,7 +517,7 @@ export default function Home() {
                   </p>
                 </>
               )}
-            </form>
+            </div>
 
             <div className="mt-6">
               <div className="mb-2 flex items-center justify-between">

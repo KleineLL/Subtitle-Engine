@@ -5,7 +5,6 @@ import { openrouter } from "@/lib/openrouter";
 
 const CHUNK_SIZE = 40;
 const CONTEXT_WINDOW = 6;
-const SCRIPT_SAMPLE_MAX_CHARS = 12000;
 const ENGLISH_LEAKAGE_REGEX = /[A-Za-z]{3,}/;
 
 export const runtime = "nodejs";
@@ -16,14 +15,13 @@ export async function POST(req: Request) {
     console.log("API /api/translate called");
 
     const body = await req.json();
-    const { subtitles, confirmedContext } = body;
-    const filmContext = confirmedContext ?? body.filmContext;
+    const { subtitles, filmContext: confirmedContext } = body;
     console.log("Request received");
 
     const filmContextObj =
-      filmContext && typeof filmContext === "object" ? filmContext : {};
+      confirmedContext && typeof confirmedContext === "object" ? confirmedContext : {};
     const filmContextEntries = Object.entries(filmContextObj).filter(
-      ([k]) => k !== "characters" && k !== "script_summary"
+      ([k]) => k !== "characters" && k !== "scriptSummary"
     );
     const filmContextDisplay =
       filmContextEntries.length > 0
@@ -32,8 +30,8 @@ export async function POST(req: Request) {
               Array.isArray(v) ? `${k}: ${(v as unknown[]).join(", ")}` : `${k}: ${String(v)}`
             )
             .join("\n")
-        : filmContext && typeof filmContext === "string"
-          ? filmContext
+        : confirmedContext && typeof confirmedContext === "string"
+          ? confirmedContext
           : "No film context provided.";
 
     const characters = (filmContextObj as Record<string, unknown>).characters;
@@ -76,53 +74,13 @@ export async function POST(req: Request) {
 
     const originalTexts = entries.map((e) => e.text);
 
-    // Use confirmed script summary if provided; otherwise generate it
-    let scriptSummary =
-      (filmContextObj as Record<string, unknown>).script_summary as string | undefined;
-    if (!scriptSummary || typeof scriptSummary !== "string") {
-      const fullScriptText = entries.map((e) => e.text).join("\n");
-      const scriptSample =
-        fullScriptText.length > SCRIPT_SAMPLE_MAX_CHARS
-          ? fullScriptText.slice(0, SCRIPT_SAMPLE_MAX_CHARS - 100) + "\n[...]"
-          : fullScriptText;
+    // Use confirmed script summary if provided; otherwise skip (translation requires confirmed context)
+    const scriptSummary =
+      (filmContextObj as Record<string, unknown>).scriptSummary != null
+        ? String((filmContextObj as Record<string, unknown>).scriptSummary)
+        : "No script summary available.";
 
-      console.log("Generating script understanding...");
-      const scriptUnderstandingPrompt = `Analyze this subtitle script sample and summarize for translation guidance.
-
-Subtitle dialogue (sample):
-${scriptSample}
-
-Return JSON only:
-{
-  "tone": "description of overall tone",
-  "dialogue_style": "description of how characters speak",
-  "narrative_summary": "brief summary of narrative situation, character dynamics, slang density, cultural references"
-}`;
-
-      scriptSummary = "No script summary available.";
-      try {
-        const scriptCompletion = await openrouter.chat.completions.create({
-          model: "openai/gpt-4o-mini",
-          temperature: 0.2,
-          messages: [
-            { role: "system", content: "Return structured JSON only. No markdown." },
-            { role: "user", content: scriptUnderstandingPrompt },
-          ],
-          response_format: { type: "json_object" },
-        });
-        const scriptRaw = (scriptCompletion.choices[0]?.message?.content ?? "").trim();
-        if (scriptRaw) {
-          const scriptParsed = JSON.parse(scriptRaw) as Record<string, unknown>;
-          scriptSummary = Object.entries(scriptParsed)
-            .map(([k, v]) => `${k}: ${String(v)}`)
-            .join("\n");
-        }
-      } catch (e) {
-        console.warn("Script understanding failed, continuing without:", e);
-      }
-    }
-
-    // STEP 4 — Context-aware translation
+    // Context-aware translation
     const systemPrompt = `You are translating film subtitles.
 
 You have access to:
