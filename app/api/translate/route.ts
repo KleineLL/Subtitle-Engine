@@ -16,13 +16,14 @@ export async function POST(req: Request) {
     console.log("API /api/translate called");
 
     const body = await req.json();
-    const { subtitles, filmContext } = body;
+    const { subtitles, confirmedContext } = body;
+    const filmContext = confirmedContext ?? body.filmContext;
     console.log("Request received");
 
     const filmContextObj =
       filmContext && typeof filmContext === "object" ? filmContext : {};
     const filmContextEntries = Object.entries(filmContextObj).filter(
-      ([k]) => k !== "characters"
+      ([k]) => k !== "characters" && k !== "script_summary"
     );
     const filmContextDisplay =
       filmContextEntries.length > 0
@@ -75,15 +76,18 @@ export async function POST(req: Request) {
 
     const originalTexts = entries.map((e) => e.text);
 
-    // STEP 3 — Subtitle script understanding
-    const fullScriptText = entries.map((e) => e.text).join("\n");
-    const scriptSample =
-      fullScriptText.length > SCRIPT_SAMPLE_MAX_CHARS
-        ? fullScriptText.slice(0, SCRIPT_SAMPLE_MAX_CHARS - 100) + "\n[...]"
-        : fullScriptText;
+    // Use confirmed script summary if provided; otherwise generate it
+    let scriptSummary =
+      (filmContextObj as Record<string, unknown>).script_summary as string | undefined;
+    if (!scriptSummary || typeof scriptSummary !== "string") {
+      const fullScriptText = entries.map((e) => e.text).join("\n");
+      const scriptSample =
+        fullScriptText.length > SCRIPT_SAMPLE_MAX_CHARS
+          ? fullScriptText.slice(0, SCRIPT_SAMPLE_MAX_CHARS - 100) + "\n[...]"
+          : fullScriptText;
 
-    console.log("Generating script understanding...");
-    const scriptUnderstandingPrompt = `Analyze this subtitle script sample and summarize for translation guidance.
+      console.log("Generating script understanding...");
+      const scriptUnderstandingPrompt = `Analyze this subtitle script sample and summarize for translation guidance.
 
 Subtitle dialogue (sample):
 ${scriptSample}
@@ -95,26 +99,27 @@ Return JSON only:
   "narrative_summary": "brief summary of narrative situation, character dynamics, slang density, cultural references"
 }`;
 
-    let scriptSummary = "No script summary available.";
-    try {
-      const scriptCompletion = await openrouter.chat.completions.create({
-        model: "openai/gpt-4o-mini",
-        temperature: 0.2,
-        messages: [
-          { role: "system", content: "Return structured JSON only. No markdown." },
-          { role: "user", content: scriptUnderstandingPrompt },
-        ],
-        response_format: { type: "json_object" },
-      });
-      const scriptRaw = (scriptCompletion.choices[0]?.message?.content ?? "").trim();
-      if (scriptRaw) {
-        const scriptParsed = JSON.parse(scriptRaw) as Record<string, unknown>;
-        scriptSummary = Object.entries(scriptParsed)
-          .map(([k, v]) => `${k}: ${String(v)}`)
-          .join("\n");
+      scriptSummary = "No script summary available.";
+      try {
+        const scriptCompletion = await openrouter.chat.completions.create({
+          model: "openai/gpt-4o-mini",
+          temperature: 0.2,
+          messages: [
+            { role: "system", content: "Return structured JSON only. No markdown." },
+            { role: "user", content: scriptUnderstandingPrompt },
+          ],
+          response_format: { type: "json_object" },
+        });
+        const scriptRaw = (scriptCompletion.choices[0]?.message?.content ?? "").trim();
+        if (scriptRaw) {
+          const scriptParsed = JSON.parse(scriptRaw) as Record<string, unknown>;
+          scriptSummary = Object.entries(scriptParsed)
+            .map(([k, v]) => `${k}: ${String(v)}`)
+            .join("\n");
+        }
+      } catch (e) {
+        console.warn("Script understanding failed, continuing without:", e);
       }
-    } catch (e) {
-      console.warn("Script understanding failed, continuing without:", e);
     }
 
     // STEP 4 — Context-aware translation
