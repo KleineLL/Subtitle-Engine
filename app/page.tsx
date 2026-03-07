@@ -27,6 +27,7 @@ type PreparedContext = {
   setting?: string;
   themes?: string;
   cultural_context?: string;
+  semantic_anchors?: string[];
   scriptSummary?: ScriptSummary;
   characters?: CharacterInfo[];
   [key: string]: unknown;
@@ -151,7 +152,7 @@ export default function Home() {
 
   const handleUpdateReviewField = (
     field: keyof PreparedContext,
-    value: string | ScriptSummary | CharacterInfo[]
+    value: string | ScriptSummary | CharacterInfo[] | string[]
   ) => {
     if (!preparedContext) return;
     setPreparedContext({ ...preparedContext, [field]: value });
@@ -456,6 +457,34 @@ export default function Home() {
                       }
                       rows={5}
                       className="w-full resize-y rounded-md border border-stone-200 bg-white p-3 text-sm leading-relaxed outline-none transition-colors focus:border-stone-400 focus:ring-1 focus:ring-stone-300"
+                    />
+                  </div>
+
+                  <div className="mb-6">
+                    <label className="mb-1 block text-xs font-medium text-stone-600">
+                      Semantic Anchors
+                    </label>
+                    <small className="mb-2 block text-xs text-gray-500">
+                      Main linguistic and cultural domains for interpreting dialogue
+                      (e.g. youth club culture, crime slang, sarcasm).
+                    </small>
+                    <textarea
+                      value={
+                        (preparedContext.semantic_anchors as string[] | undefined)
+                          ?.join("\n") ?? ""
+                      }
+                      onChange={(e) =>
+                        handleUpdateReviewField(
+                          "semantic_anchors",
+                          e.target.value
+                            .split("\n")
+                            .map((s) => s.trim())
+                            .filter(Boolean)
+                        )
+                      }
+                      rows={5}
+                      className="w-full resize-y rounded-md border border-stone-200 bg-white p-3 text-sm leading-relaxed outline-none transition-colors focus:border-stone-400 focus:ring-1 focus:ring-stone-300"
+                      placeholder="One anchor per line (e.g. youth club culture, crime slang)"
                     />
                   </div>
 

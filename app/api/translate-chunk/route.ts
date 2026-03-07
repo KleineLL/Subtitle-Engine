@@ -27,12 +27,17 @@ export async function POST(req: Request) {
     const prevText =
       typeof previousContextText === "string" ? previousContextText : "";
 
-    const { filmContextDisplay, charactersDisplay, scriptSummary } =
-      buildContextFromObj(contextObj);
+    const {
+      filmContextDisplay,
+      charactersDisplay,
+      scriptSummary,
+      semanticAnchorsList,
+    } = buildContextFromObj(contextObj);
     const systemPrompt = buildSystemPrompt(
       filmContextDisplay,
       charactersDisplay,
-      scriptSummary
+      scriptSummary,
+      semanticAnchorsList ?? ""
     );
 
     const chunkEntries = chunk.map(

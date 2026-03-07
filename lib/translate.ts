@@ -46,7 +46,11 @@ function hasEnglishDialogueLeakage(text: string): boolean {
 }
 
 export function buildContextFromObj(contextObj: Record<string, unknown>) {
-  const excludeKeys = new Set(["characters", "scriptSummary"]);
+  const excludeKeys = new Set([
+    "characters",
+    "scriptSummary",
+    "semantic_anchors",
+  ]);
   const filmContextEntries = Object.entries(contextObj).filter(
     ([k]) => !excludeKeys.has(k)
   );
@@ -87,22 +91,45 @@ export function buildContextFromObj(contextObj: Record<string, unknown>) {
         ].join("\n")
       : "No script summary available.";
 
-  return { filmContextDisplay, charactersDisplay, scriptSummary };
+  const semanticAnchors = contextObj.semantic_anchors;
+  const semanticAnchorsList =
+    Array.isArray(semanticAnchors) && semanticAnchors.length > 0
+      ? (semanticAnchors as string[]).map((a) => `- ${a}`).join("\n")
+      : "";
+
+  return {
+    filmContextDisplay,
+    charactersDisplay,
+    scriptSummary,
+    semanticAnchorsList,
+  };
 }
 
 export function buildSystemPrompt(
   filmContextDisplay: string,
   charactersDisplay: string,
-  scriptSummary: string
+  scriptSummary: string,
+  semanticAnchorsList: string
 ) {
+  const semanticAnchorsSection =
+    semanticAnchorsList
+      ? `
+
+Semantic anchors (use these to interpret dialogue meaning before translating):
+${semanticAnchorsList}
+
+Use the semantic anchors to interpret dialogue meaning before translating into Chinese.
+`
+      : "";
+
   return `You are translating film subtitles.
 
 You have access to:
 - Film context (metadata, setting, themes, cultural context, language style)
 - Script understanding (tone, dialogue style, narrative summary)
-- Character information (for gender-aware dialogue)
+- Character information (for gender-aware dialogue)${semanticAnchorsList ? "\n- Semantic anchors (linguistic and cultural domains)" : ""}
 
-Use them to interpret dialogue appropriately.
+Use them to interpret dialogue appropriately.${semanticAnchorsSection}
 
 Translation rules:
 - Preserve meaning

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateScriptSummary } from "@/lib/script-summary";
+import { generateSemanticAnchors } from "@/lib/semantic-anchors";
 
 export const runtime = "nodejs";
 export const maxDuration = 90;
@@ -55,9 +56,15 @@ export async function POST(req: Request) {
         }
       : { tone: "", dialogue_style: "", narrative_summary: "" };
 
+    const semanticAnchors = await generateSemanticAnchors(
+      filmContext,
+      scriptSummaryObj
+    );
+
     const result = {
       ...filmContext,
       scriptSummary: scriptSummaryObj,
+      semantic_anchors: semanticAnchors,
     };
 
     return NextResponse.json(result);
