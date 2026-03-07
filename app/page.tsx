@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { parseSrt, entriesToSrt } from "@/lib/srt";
+
+const CHUNK_SIZE = 35;
 
 type FilmDetail = {
   Title: string;
@@ -160,28 +163,60 @@ export default function Home() {
   };
 
   const handleTranslate = async () => {
-    if (!srtFile || !srtText) return;
+    if (!srtFile || !srtText || !confirmedContext) return;
 
     setIsTranslating(true);
     setProgress(5);
 
     try {
-      const res = await fetch("/api/translate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          subtitles: srtText,
-          confirmedContext: confirmedContext ?? undefined,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error ?? "Translation failed");
+      const entries = parseSrt(srtText);
+      if (entries.length === 0) {
+        throw new Error("No valid subtitle entries");
       }
 
-      setTranslatedSubtitles(data.translated ?? "");
+      const chunks: typeof entries[] = [];
+      for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
+        chunks.push(entries.slice(i, i + CHUNK_SIZE));
+      }
+
+      const totalChunks = chunks.length;
+      const translatedEntries: typeof entries = [];
+
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        const previousEntries = entries.slice(0, i * CHUNK_SIZE);
+        const previousContextText = previousEntries
+          .map((e) => e.text)
+          .join("\n");
+
+        const res = await fetch("/api/translate-chunk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chunk: chunk.map((e) => ({
+              index: e.index,
+              timecode: e.timecode,
+              text: e.text,
+            })),
+            confirmedContext,
+            previousContextText,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error ?? "Translation failed");
+        }
+
+        const chunkTranslated = data.translated ?? [];
+        translatedEntries.push(...chunkTranslated);
+
+        setProgress(5 + Math.round(((i + 1) / totalChunks) * 85));
+      }
+
+      const finalSrt = entriesToSrt(translatedEntries);
+      setTranslatedSubtitles(finalSrt);
     } catch (err) {
       console.error(err);
       alert(err instanceof Error ? err.message : "Translation failed.");
