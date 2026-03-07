@@ -2,10 +2,56 @@ import { NextResponse } from "next/server";
 import { parseSrt, entriesToSrt } from "@/lib/srt";
 import { normalizeText } from "@/lib/normalize";
 import { openrouter } from "@/lib/openrouter";
+import { generateScriptSummary } from "@/lib/script-summary";
 
 const CHUNK_SIZE = 40;
 const CONTEXT_WINDOW = 6;
 const ENGLISH_LEAKAGE_REGEX = /[A-Za-z]{3,}/;
+
+function buildContextFromObj(contextObj: Record<string, unknown>) {
+  const excludeKeys = new Set(["characters", "scriptSummary"]);
+  const filmContextEntries = Object.entries(contextObj).filter(
+    ([k]) => !excludeKeys.has(k)
+  );
+  const filmContextDisplay =
+    filmContextEntries.length > 0
+      ? filmContextEntries
+          .map(([k, v]) =>
+            Array.isArray(v) ? `${k}: ${(v as unknown[]).join(", ")}` : `${k}: ${String(v)}`
+          )
+          .join("\n")
+      : "No film context provided.";
+
+  const characters = contextObj.characters;
+  const charactersDisplay =
+    Array.isArray(characters) && characters.length > 0
+      ? characters
+          .map((c: unknown) => {
+            if (c && typeof c === "object" && "name" in c && "gender" in c) {
+              return `${(c as { name: string; gender: string }).name} (${(c as { name: string; gender: string }).gender})`;
+            }
+            return null;
+          })
+          .filter(Boolean)
+          .join(", ")
+      : "No character information available.";
+
+  const scriptSummaryObj = contextObj.scriptSummary;
+  const scriptSummary =
+    scriptSummaryObj &&
+    typeof scriptSummaryObj === "object" &&
+    "tone" in scriptSummaryObj &&
+    "dialogue_style" in scriptSummaryObj &&
+    "narrative_summary" in scriptSummaryObj
+      ? [
+          `tone: ${String((scriptSummaryObj as Record<string, unknown>).tone)}`,
+          `dialogue_style: ${String((scriptSummaryObj as Record<string, unknown>).dialogue_style)}`,
+          `narrative_summary: ${String((scriptSummaryObj as Record<string, unknown>).narrative_summary)}`,
+        ].join("\n")
+      : "No script summary available.";
+
+  return { filmContextDisplay, charactersDisplay, scriptSummary };
+}
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -15,38 +61,41 @@ export async function POST(req: Request) {
     console.log("API /api/translate called");
 
     const body = await req.json();
-    const { subtitles, filmContext: confirmedContext } = body;
+    const { subtitles, confirmedContext, filmContext } = body;
     console.log("Request received");
 
-    const filmContextObj =
-      confirmedContext && typeof confirmedContext === "object" ? confirmedContext : {};
-    const filmContextEntries = Object.entries(filmContextObj).filter(
-      ([k]) => k !== "characters" && k !== "scriptSummary"
-    );
-    const filmContextDisplay =
-      filmContextEntries.length > 0
-        ? filmContextEntries
-            .map(([k, v]) =>
-              Array.isArray(v) ? `${k}: ${(v as unknown[]).join(", ")}` : `${k}: ${String(v)}`
-            )
-            .join("\n")
-        : confirmedContext && typeof confirmedContext === "string"
-          ? confirmedContext
-          : "No film context provided.";
+    const contextSource =
+      confirmedContext && typeof confirmedContext === "object"
+        ? confirmedContext
+        : filmContext && typeof filmContext === "object"
+          ? filmContext
+          : {};
 
-    const characters = (filmContextObj as Record<string, unknown>).characters;
-    const charactersDisplay =
-      Array.isArray(characters) && characters.length > 0
-        ? characters
-            .map((c: unknown) => {
-              if (c && typeof c === "object" && "name" in c && "gender" in c) {
-                return `${(c as { name: string; gender: string }).name} (${(c as { name: string; gender: string }).gender})`;
-              }
-              return null;
-            })
-            .filter(Boolean)
-            .join(", ")
-        : "No character information available.";
+    let filmContextDisplay: string;
+    let charactersDisplay: string;
+    let scriptSummary: string;
+
+    if (
+      confirmedContext &&
+      typeof confirmedContext === "object" &&
+      Object.keys(confirmedContext).length > 0
+    ) {
+      const built = buildContextFromObj(
+        confirmedContext as Record<string, unknown>
+      );
+      filmContextDisplay = built.filmContextDisplay;
+      charactersDisplay = built.charactersDisplay;
+      scriptSummary = built.scriptSummary;
+    } else if (contextSource && Object.keys(contextSource).length > 0) {
+      const built = buildContextFromObj(contextSource as Record<string, unknown>);
+      filmContextDisplay = built.filmContextDisplay;
+      charactersDisplay = built.charactersDisplay;
+      scriptSummary = built.scriptSummary;
+    } else {
+      filmContextDisplay = "No film context provided.";
+      charactersDisplay = "No character information available.";
+      scriptSummary = "No script summary available.";
+    }
 
     if (!subtitles) {
       return NextResponse.json(
@@ -74,11 +123,21 @@ export async function POST(req: Request) {
 
     const originalTexts = entries.map((e) => e.text);
 
-    // Use confirmed script summary if provided; otherwise skip (translation requires confirmed context)
-    const scriptSummary =
-      (filmContextObj as Record<string, unknown>).scriptSummary != null
-        ? String((filmContextObj as Record<string, unknown>).scriptSummary)
-        : "No script summary available.";
+    // Generate script summary only when confirmedContext is not provided
+    if (
+      !confirmedContext ||
+      typeof confirmedContext !== "object" ||
+      !(confirmedContext as Record<string, unknown>).scriptSummary
+    ) {
+      const generated = await generateScriptSummary(subtitles);
+      if (generated) {
+        scriptSummary = [
+          `tone: ${generated.tone}`,
+          `dialogue_style: ${generated.dialogue_style}`,
+          `narrative_summary: ${generated.narrative_summary}`,
+        ].join("\n");
+      }
+    }
 
     // Context-aware translation
     const systemPrompt = `You are translating film subtitles.
