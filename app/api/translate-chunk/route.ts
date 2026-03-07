@@ -6,7 +6,7 @@ import {
 } from "@/lib/translate";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
   try {
@@ -53,7 +53,7 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error("Translate chunk error:", error);
     return NextResponse.json(
-      { error: "Translation failed" },
+      { error: "translation failed" },
       { status: 500 }
     );
   }
