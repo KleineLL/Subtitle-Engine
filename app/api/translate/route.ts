@@ -76,19 +76,26 @@ Subtitle style guidelines:
 - Prefer colloquial Chinese expressions.
 - Avoid overly formal or written language.
 
+Important:
+Do NOT change subtitle numbering.
+Do NOT change timestamps.
+Return only translated subtitle text.
+
 Film context:
 ${filmContextDisplay}
 
-Use this context to understand cultural references, slang, character relationships, and tone.
+Use this context to understand cultural references, slang, character relationships, tone and humor.
 
 You will receive a JSON array of subtitle entries.
 Translate ONLY the text field into Chinese.
 Return a JSON array with the same ids.
-Do not skip any entries. Do not include English. Keep the same ids. Return only Chinese translations.
+- do not skip any entries
+- do not include English
+- keep the same ids
+- return only Chinese translations
 
 You may receive previous dialogue context for understanding only.
-Do NOT translate the context—translate ONLY the JSON array entries.
-Do NOT change subtitle numbering. Do NOT change timestamps. Return only translated subtitle text.`;
+Do NOT translate the context—translate ONLY the JSON array entries.`;
 
     type JsonEntry = { id: number; text: string };
 
