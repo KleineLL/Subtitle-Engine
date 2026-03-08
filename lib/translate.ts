@@ -154,6 +154,13 @@ Prefer gender-neutral Chinese expressions such as:
 老兄
 Avoid gendered terms like "兄弟" when addressing a female character.
 
+If a phrase refers to a well-known film, book, song, or cultural work, prefer the commonly known Chinese title rather than a literal translation.
+For example:
+Trainspotting → 猜火车
+Pulp Fiction → 低俗小说
+Fight Club → 搏击俱乐部
+Avoid literal translations of cultural titles. Apply this rule only when the phrase clearly refers to a cultural work (film, book, music, etc.).
+
 Film context:
 ${filmContextDisplay}
 

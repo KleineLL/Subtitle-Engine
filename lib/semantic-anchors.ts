@@ -26,7 +26,7 @@ ${scriptStr}
 Generate 3–6 semantic anchors: short phrases describing the main linguistic and cultural domains that influence how dialogue should be interpreted. These help the translator understand slang, tone, and culturally loaded phrases.
 
 Examples:
-- For a rave culture film: youth club culture, recreational drug slang, british casual banter
+- For a youth culture film: youth nightlife, casual banter, slang
 - For a crime film: crime slang, gang hierarchy language, police interrogation tone
 - For a comedy: sarcasm, exaggeration, casual banter
 
